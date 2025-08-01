@@ -64,6 +64,7 @@ function DailyWorkoutLog({
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [showChangeSearchModal, setShowChangeSearchModal] = useState(false);
   const [selectedExerciseDetails, setSelectedExerciseDetails] = useState(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -73,21 +74,37 @@ function DailyWorkoutLog({
   const isDataFetched = useRef(false); // Track if data fetching is complete
   const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if on mobile view
 
-  // Fetch exercises from Supabase Exercise Library
+  // Fetch exercises from Supabase Exercise Library with pagination to get all records
   const fetchExerciseLibrary = async () => {
     try {
-      const { data: exercises, error } = await supabase
-        .from("Exercise Library")
-        .select(
-          "Exercise, Target_Muscle_Group, Video_Demonstration, In-Depth_Explanation, Favorite, 1_RM_Alex, Primary_Equipment, Mechanics, Force_Type"
-        );
-      if (error) throw error;
+      let allExercises = [];
+      let page = 0;
+      const pageSize = 1000; // Supabase default limit per request
+      let hasMore = true;
+
+      while (hasMore) {
+        const { data: exercises, error } = await supabase
+          .from("Exercise Library")
+          .select(
+            "Exercise, Target_Muscle_Group, Video_Demonstration, In-Depth_Explanation, Favorite, 1_RM_Alex, Primary_Equipment, Mechanics, Force_Type"
+          )
+          .range(page * pageSize, (page + 1) * pageSize - 1); // Fetch in chunks
+
+        if (error) throw error;
+        if (exercises.length === 0) {
+          hasMore = false;
+        } else {
+          allExercises = [...allExercises, ...exercises];
+          page++;
+        }
+      }
+
       console.log(
         "Fetched Exercise Library: ",
-        exercises?.length || 0,
+        allExercises.length,
         " exercises"
       );
-      setExerciseLibrary(exercises || []);
+      setExerciseLibrary(allExercises);
     } catch (err) {
       console.error("Error fetching Exercise Library:", err);
       setError(err.message || "Failed to fetch exercise library");
@@ -370,6 +387,7 @@ function DailyWorkoutLog({
       onUpdateExercises([...selectedExercises, exercise]);
       setSearchTerm("");
       setShowSearch(false);
+      setShowChangeSearchModal(false);
       setIsDetailsModalOpen(false);
       setIsChangeMode(false);
     }
@@ -414,6 +432,7 @@ function DailyWorkoutLog({
       setIsDetailsModalOpen(false);
       setIsChangeMode(false);
       setShowSearch(false);
+      setShowChangeSearchModal(false);
       // Update selectedExercises
       const updatedExercises = [...selectedExercises];
       updatedExercises[exerciseIndex] = newExercise;
@@ -426,7 +445,11 @@ function DailyWorkoutLog({
     const exercise = logs[exerciseIndex];
     // Find additional details from exerciseLibrary if available
     const exerciseDetails =
-      exerciseLibrary.find((ex) => ex.Exercise === exercise.exercise) || {};
+      exerciseLibrary.find(
+        (ex) =>
+          ex.Exercise.trim().toLowerCase() ===
+          exercise.exercise.trim().toLowerCase()
+      ) || {};
     setSelectedExerciseDetails({
       ...exercise,
       index: exerciseIndex,
@@ -446,7 +469,8 @@ function DailyWorkoutLog({
   const openChangeExercise = (exerciseIndex) => {
     setEditExerciseIndex(exerciseIndex);
     setIsChangeMode(true);
-    setShowSearch(true);
+    setShowChangeSearchModal(true);
+    setShowSearch(false); // Ensure the bottom search is closed to avoid confusion
     setSearchTerm(""); // Reset search term for a fresh search
   };
 
@@ -468,7 +492,7 @@ function DailyWorkoutLog({
     setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Smart search across multiple columns with performance optimization
+  // Smart search across multiple columns
   const filteredExercises = searchTerm
     ? exerciseLibrary.filter((ex) => {
         const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
@@ -1172,7 +1196,11 @@ function DailyWorkoutLog({
         <Button
           colorScheme="blue"
           size="md"
-          onClick={() => setShowSearch(!showSearch)}
+          onClick={() => {
+            setShowSearch(!showSearch);
+            setShowChangeSearchModal(false); // Close modal if open
+            setIsChangeMode(false); // Reset change mode
+          }}
           mb={2}
         >
           {showSearch ? "Cancel" : "Add New Exercise"}
@@ -1459,6 +1487,131 @@ function DailyWorkoutLog({
             <Button
               variant="ghost"
               onClick={() => setIsDetailsModalOpen(false)}
+            >
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Change Exercise Search Modal */}
+      <Modal
+        isOpen={showChangeSearchModal}
+        onClose={() => {
+          setShowChangeSearchModal(false);
+          setIsChangeMode(false);
+        }}
+        size={{ base: "full", md: "lg" }}
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Change Exercise</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Input
+              placeholder="Search exercises by name, muscle group, equipment..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              size="md"
+              mb={2}
+              width="full"
+            />
+            {searchTerm && (
+              <Box
+                maxH="300px"
+                overflowY="auto"
+                bg="white"
+                borderRadius="md"
+                boxShadow="md"
+                p={2}
+                mt={-2}
+              >
+                <List spacing={1}>
+                  {filteredExercises.length === 0 && (
+                    <ListItem>
+                      <Text fontSize="sm" color="gray.500">
+                        No matching exercises found.
+                      </Text>
+                    </ListItem>
+                  )}
+                  {filteredExercises.map((ex) => (
+                    <ListItem
+                      key={ex.Exercise}
+                      p={2}
+                      borderRadius="sm"
+                      _hover={{ bg: "gray.100", cursor: "pointer" }}
+                      onClick={() => {
+                        replaceExercise(editExerciseIndex, ex.Exercise);
+                      }}
+                      borderBottom="1px solid"
+                      borderColor="gray.200"
+                    >
+                      <Text fontWeight="bold" fontSize="md">
+                        {ex.Exercise}
+                      </Text>
+                      <Text fontSize="sm" color="gray.600">
+                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
+                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
+                        {ex.Mechanics || "N/A"}
+                      </Text>
+                      <Flex gap={2} mt={1}>
+                        {ex.Video_Demonstration && (
+                          <Text
+                            fontSize="xs"
+                            color="blue.500"
+                            as="a"
+                            href={ex.Video_Demonstration}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            _hover={{ textDecoration: "underline" }}
+                          >
+                            Video Demo
+                          </Text>
+                        )}
+                        {ex["In-Depth_Explanation"] && (
+                          <Text
+                            fontSize="xs"
+                            color="blue.500"
+                            as="a"
+                            href={ex["In-Depth_Explanation"]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            _hover={{ textDecoration: "underline" }}
+                          >
+                            Explanation
+                          </Text>
+                        )}
+                      </Flex>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+            <Select
+              placeholder="Or select from list"
+              size="sm"
+              mt={2}
+              width="full"
+              onChange={(e) => {
+                if (e.target.value) {
+                  replaceExercise(editExerciseIndex, e.target.value);
+                }
+              }}
+            >
+              {exerciseLibrary.map((ex) => (
+                <option key={ex.Exercise} value={ex.Exercise}>
+                  {ex.Exercise}
+                </option>
+              ))}
+            </Select>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowChangeSearchModal(false);
+                setIsChangeMode(false);
+              }}
             >
               Close
             </Button>
