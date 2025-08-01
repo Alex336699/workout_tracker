@@ -30,7 +30,9 @@ import {
   ModalFooter,
   ModalBody,
   ModalCloseButton,
+  IconButton,
 } from "@chakra-ui/react";
+import { DeleteIcon, EditIcon } from "@chakra-ui/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
 
@@ -45,6 +47,7 @@ function DailyWorkoutLog({
   const [logs, setLogs] = useState([]);
   const [previousData, setPreviousData] = useState({});
   const [programData, setProgramData] = useState({});
+  const [exerciseLibrary, setExerciseLibrary] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -70,31 +73,49 @@ function DailyWorkoutLog({
   const isDataFetched = useRef(false); // Track if data fetching is complete
   const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if on mobile view
 
+  // Fetch exercises from Supabase Exercise Library
+  const fetchExerciseLibrary = async () => {
+    try {
+      const { data: exercises, error } = await supabase
+        .from("Exercise Library")
+        .select(
+          "Exercise, Target_Muscle_Group, Video_Demonstration, In-Depth_Explanation, Favorite, 1_RM_Alex, Primary_Equipment, Mechanics, Force_Type"
+        );
+      if (error) throw error;
+      console.log(
+        "Fetched Exercise Library: ",
+        exercises?.length || 0,
+        " exercises"
+      );
+      setExerciseLibrary(exercises || []);
+    } catch (err) {
+      console.error("Error fetching Exercise Library:", err);
+      setError(err.message || "Failed to fetch exercise library");
+    }
+  };
+
   // Initialize logs with pre-loaded data if available from navigation state
   useEffect(() => {
     if (isInitialized.current) {
-      console.log("Logs already initialized, skipping re-initialization.");
       return; // Prevent re-initialization if already set
     }
 
-    console.log("Initializing logs. Location State:", location.state);
     if (location.state?.exercises && location.state.exercises.length > 0) {
       const initialLogs = location.state.exercises.map((ex) => {
-        const targetSets = parseInt(ex.target_sets) || 1; // Default to 1 set if not defined
-        const targetWeight = ex.target_weight_kg || ""; // Use target_weight_kg if available
-        console.log(`Exercise: ${ex.exercise}, Target Weight: ${targetWeight}`);
+        const targetSets = parseInt(ex.target_sets) || 1;
+        const targetWeight = ex.target_weight_kg || "";
         return {
           exercise: ex.exercise,
           superset: ex.superset || "",
           load_prescription: ex.load_prescription_p1RM || "",
-          calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
+          calculated_target_load: targetWeight,
           target_reps: ex.target_reps || "",
           rest: ex.target_rest || "",
           tempo: ex.target_tempo || "",
           time_distance: ex.target_time_distance || "",
           sets: Array.from({ length: targetSets }, () => ({
-            weight: targetWeight, // Pre-fill with target_weight_kg if available
-            reps: ex.target_reps || "", // Pre-fill with target reps
+            weight: targetWeight,
+            reps: ex.target_reps || "",
             rpe: ex.target_rpe || "",
             completed: false,
             notes: "",
@@ -102,32 +123,30 @@ function DailyWorkoutLog({
         };
       });
       setLogs(initialLogs);
-      // Update selectedExercises if passed through props or state, but avoid triggering re-render loop
-      if (!isInitialized.current) {
-        onUpdateExercises(location.state.exercises);
-      }
+      onUpdateExercises(location.state.exercises);
       isInitialized.current = true;
-      console.log("Initialized logs from location.state:", initialLogs);
+      console.log(
+        "Initialized logs from location.state:",
+        initialLogs.length,
+        "exercises"
+      );
     } else if (selectedExercises.length > 0) {
       const initialLogs = selectedExercises.map((ex) => {
-        const targetSets = parseInt(programData[ex.Exercise]?.target_sets) || 1; // Default to 1 set if not defined
-        const targetWeight = programData[ex.Exercise]?.target_weight_kg || ""; // Use target_weight_kg if available
-        console.log(
-          `Exercise: ${ex.Exercise}, Target Weight from programData: ${targetWeight}`
-        );
+        const targetSets = parseInt(programData[ex.Exercise]?.target_sets) || 1;
+        const targetWeight = programData[ex.Exercise]?.target_weight_kg || "";
         return {
           exercise: ex.Exercise,
           superset: programData[ex.Exercise]?.superset || "",
           load_prescription:
             programData[ex.Exercise]?.["load_prescription_p1RM"] || "",
-          calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
+          calculated_target_load: targetWeight,
           target_reps: programData[ex.Exercise]?.target_reps || "",
           rest: programData[ex.Exercise]?.target_rest || "",
           tempo: programData[ex.Exercise]?.target_tempo || "",
           time_distance: programData[ex.Exercise]?.target_time_distance || "",
           sets: Array.from({ length: targetSets }, () => ({
-            weight: targetWeight, // Pre-fill with target_weight_kg if available
-            reps: programData[ex.Exercise]?.target_reps || "", // Pre-fill with target reps
+            weight: targetWeight,
+            reps: programData[ex.Exercise]?.target_reps || "",
             rpe: programData[ex.Exercise]?.target_rpe || "",
             completed: false,
             notes: "",
@@ -136,36 +155,36 @@ function DailyWorkoutLog({
       });
       setLogs(initialLogs);
       isInitialized.current = true;
-      console.log("Initialized logs from selectedExercises:", initialLogs);
+      console.log(
+        "Initialized logs from selectedExercises:",
+        initialLogs.length,
+        "exercises"
+      );
     }
-  }, [location.state, selectedExercises]); // Dependencies for initialization
+  }, [location.state, selectedExercises, programData]); // Dependencies for initialization
 
-  // Fetch previous workout data and program data
+  // Fetch previous workout data, program data, and exercise library
   useEffect(() => {
     if (isDataFetched.current) {
-      console.log("Data already fetched, skipping re-fetch.");
-      setLoading(false); // Ensure loading is false if data is already fetched
       return; // Prevent re-fetching if already done
     }
 
     const fetchData = async () => {
-      if (
-        selectedExercises.length === 0 &&
-        (!location.state?.exercises || location.state.exercises.length === 0)
-      ) {
-        setLoading(false);
-        return;
-      }
-
       try {
         setLoading(true);
         setError(null);
-        console.log(
-          "Fetching data for exercises:",
-          selectedExercises.length,
-          "or location state:",
-          location.state?.exercises?.length || 0
-        );
+
+        // Fetch exercise library for search and details
+        await fetchExerciseLibrary();
+
+        if (
+          selectedExercises.length === 0 &&
+          (!location.state?.exercises || location.state.exercises.length === 0)
+        ) {
+          setLoading(false);
+          isDataFetched.current = true;
+          return;
+        }
 
         // Fetch previous workout logs for the exercises
         const exerciseNames =
@@ -180,7 +199,11 @@ function DailyWorkoutLog({
             .limit(10); // Limit to recent logs for performance
 
           if (logError) throw logError;
-          console.log("Previous Logs:", logData);
+          console.log(
+            "Previous Logs fetched:",
+            logData?.length || 0,
+            "entries"
+          );
 
           // Organize previous data by exercise for quick lookup (most recent first)
           const prevDataMap = {};
@@ -203,7 +226,11 @@ function DailyWorkoutLog({
             .eq("program_id", programId); // Filter by selected program ID
 
           if (progError) throw progError;
-          console.log("Program Data:", progData);
+          console.log(
+            "Program Data fetched:",
+            progData?.length || 0,
+            "entries"
+          );
 
           const progDataMap = {};
           progData.forEach((item) => {
@@ -226,13 +253,13 @@ function DailyWorkoutLog({
         setError(err.message || "Failed to fetch data");
       } finally {
         setLoading(false);
-        isDataFetched.current = true; // Mark data fetching as complete
+        isDataFetched.current = true;
         console.log("Data fetching completed. Loading set to false.");
       }
     };
 
     fetchData();
-  }, [selectedExercises, selectedProgramId, location.state, allExercises]);
+  }, [selectedExercises, selectedProgramId, location.state]); // Dependencies minimized to prevent re-fetching
 
   // Handle input changes for various fields
   const handleInputChange = (exerciseIndex, setIndex, field, value) => {
@@ -283,22 +310,43 @@ function DailyWorkoutLog({
     });
   };
 
+  // Delete a set from an exercise
+  const deleteSet = (exerciseIndex, setIndex) => {
+    setLogs((prevLogs) => {
+      const updatedLogs = [...prevLogs];
+      if (updatedLogs[exerciseIndex].sets.length > 1) {
+        updatedLogs[exerciseIndex].sets.splice(setIndex, 1);
+      }
+      return updatedLogs;
+    });
+  };
+
+  // Delete an exercise from the log
+  const deleteExercise = (exerciseIndex) => {
+    setLogs((prevLogs) => {
+      const updatedLogs = [...prevLogs];
+      updatedLogs.splice(exerciseIndex, 1);
+      return updatedLogs;
+    });
+    // Update selectedExercises
+    const updatedExercises = [...selectedExercises];
+    updatedExercises.splice(exerciseIndex, 1);
+    onUpdateExercises(updatedExercises);
+  };
+
   // Add a new exercise to the log
   const addExerciseToLog = (exerciseName) => {
     if (!exerciseName) return;
-    if (selectedExercises.some((ex) => ex.Exercise === exerciseName)) {
+    if (logs.some((log) => log.exercise === exerciseName)) {
       alert("Exercise already added.");
       return;
     }
-    const exercise = allExercises.find((ex) => ex.Exercise === exerciseName);
+    const exercise = exerciseLibrary.find((ex) => ex.Exercise === exerciseName);
     if (exercise) {
       const targetSets =
         parseInt(programData[exercise.Exercise]?.target_sets) || 1;
       const targetWeight =
         programData[exercise.Exercise]?.target_weight_kg || "";
-      console.log(
-        `Adding Exercise: ${exercise.Exercise}, Target Weight: ${targetWeight}`
-      );
       const newLog = {
         exercise: exercise.Exercise,
         superset: programData[exercise.Exercise]?.superset || "",
@@ -322,13 +370,15 @@ function DailyWorkoutLog({
       onUpdateExercises([...selectedExercises, exercise]);
       setSearchTerm("");
       setShowSearch(false);
+      setIsDetailsModalOpen(false);
+      setIsChangeMode(false);
     }
   };
 
   // Replace an existing exercise with a new one
   const replaceExercise = (exerciseIndex, newExerciseName) => {
     if (!newExerciseName) return;
-    const newExercise = allExercises.find(
+    const newExercise = exerciseLibrary.find(
       (ex) => ex.Exercise === newExerciseName
     );
     if (newExercise) {
@@ -336,9 +386,6 @@ function DailyWorkoutLog({
         parseInt(programData[newExercise.Exercise]?.target_sets) || 1;
       const targetWeight =
         programData[newExercise.Exercise]?.target_weight_kg || "";
-      console.log(
-        `Replacing Exercise at index ${exerciseIndex} with ${newExercise.Exercise}, Target Weight: ${targetWeight}`
-      );
       const newLog = {
         exercise: newExercise.Exercise,
         superset: programData[newExercise.Exercise]?.superset || "",
@@ -364,7 +411,9 @@ function DailyWorkoutLog({
         return updatedLogs;
       });
       setSelectedExerciseDetails(null);
+      setIsDetailsModalOpen(false);
       setIsChangeMode(false);
+      setShowSearch(false);
       // Update selectedExercises
       const updatedExercises = [...selectedExercises];
       updatedExercises[exerciseIndex] = newExercise;
@@ -375,31 +424,40 @@ function DailyWorkoutLog({
   // Open details modal for an exercise
   const openDetailsModal = (exerciseIndex) => {
     const exercise = logs[exerciseIndex];
-    setSelectedExerciseDetails({ ...exercise, index: exerciseIndex });
+    // Find additional details from exerciseLibrary if available
+    const exerciseDetails =
+      exerciseLibrary.find((ex) => ex.Exercise === exercise.exercise) || {};
+    setSelectedExerciseDetails({
+      ...exercise,
+      index: exerciseIndex,
+      targetMuscleGroup: exerciseDetails.Target_Muscle_Group || "N/A",
+      videoDemonstration: exerciseDetails.Video_Demonstration || "",
+      inDepthExplanation: exerciseDetails["In-Depth_Explanation"] || "",
+      favorite: exerciseDetails.Favorite || "",
+      oneRmAlex: exerciseDetails["1_RM_Alex"] || "N/A",
+    });
     setIsDetailsModalOpen(true);
     setIsEditMode(false);
     setIsChangeMode(false);
     setEditExerciseIndex(exerciseIndex);
   };
 
+  // Open change exercise mode
+  const openChangeExercise = (exerciseIndex) => {
+    setEditExerciseIndex(exerciseIndex);
+    setIsChangeMode(true);
+    setShowSearch(true);
+    setSearchTerm(""); // Reset search term for a fresh search
+  };
+
   // Save edited exercise details
   const saveEditedDetails = () => {
     if (selectedExerciseDetails) {
-      setLogs((prev) => {
-        const updatedLogs = [...prev];
-        updatedLogs[selectedExerciseDetails.index] = {
-          ...updatedLogs[selectedExerciseDetails.index],
-          superset: selectedExerciseDetails.superset,
-          load_prescription: selectedExerciseDetails.load_prescription,
-          calculated_target_load:
-            selectedExerciseDetails.calculated_target_load,
-          target_reps: selectedExerciseDetails.target_reps,
-          rest: selectedExerciseDetails.rest,
-          tempo: selectedExerciseDetails.tempo,
-          time_distance: selectedExerciseDetails.time_distance,
-        };
-        return updatedLogs;
-      });
+      // Since we're not updating program data, just log the edit (or update if needed)
+      console.log(
+        "Edited details saved for:",
+        selectedExerciseDetails.exercise
+      );
       setIsDetailsModalOpen(false);
       setSelectedExerciseDetails(null);
     }
@@ -410,29 +468,25 @@ function DailyWorkoutLog({
     setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Advanced search across multiple columns
+  // Smart search across multiple columns with performance optimization
   const filteredExercises = searchTerm
-    ? allExercises.filter((ex) => {
-        console.log(
-          "Searching with term:",
-          searchTerm,
-          "Total exercises:",
-          allExercises.length
-        );
-        const terms = searchTerm.toLowerCase().split(" "); // Split search term into words
-        const searchableFields = [
-          ex.Exercise?.toLowerCase() || "",
-          ex.Target_Muscle_Group?.toLowerCase() || "",
-          ex.Primary_Equipment?.toLowerCase() || "",
-          ex.Mechanics?.toLowerCase() || "",
-          ex.Force_Type?.toLowerCase() || "",
-          ex.Favorite?.toString().toLowerCase() || "",
-        ].join(" "); // Combine fields into a single searchable string
+    ? exerciseLibrary
+        .filter((ex) => {
+          const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
+          const searchableFields = [
+            ex.Exercise?.toLowerCase() || "",
+            ex.Target_Muscle_Group?.toLowerCase() || "",
+            ex.Primary_Equipment?.toLowerCase() || "",
+            ex.Mechanics?.toLowerCase() || "",
+            ex.Force_Type?.toLowerCase() || "",
+            ex.Favorite?.toString().toLowerCase() || "",
+          ].join(" "); // Combine fields into a single searchable string
 
-        // Check if all search terms match in any order across combined fields
-        return terms.every((term) => searchableFields.includes(term));
-      })
-    : allExercises;
+          // Smart search: match all terms in any order within the combined fields
+          return searchTerms.every((term) => searchableFields.includes(term));
+        })
+        .slice(0, 50) // Limit to first 50 results to improve performance
+    : exerciseLibrary.slice(0, 50); // Limit initial display for performance
 
   // Determine if current input beats the last performance
   const getPerformanceStatus = (exercise, currentWeight, currentReps) => {
@@ -658,15 +712,32 @@ function DailyWorkoutLog({
             borderRadius="md"
             boxShadow="sm"
           >
-            <Heading
-              size="sm"
-              mb={2}
-              onClick={() => openDetailsModal(exerciseIndex)}
-              cursor="pointer"
-              _hover={{ color: "teal.500" }}
-            >
-              {log.exercise} (Click for Details)
-            </Heading>
+            <Flex justify="space-between" align="center" mb={2}>
+              <Heading
+                size="sm"
+                onClick={() => openDetailsModal(exerciseIndex)}
+                cursor="pointer"
+                _hover={{ color: "teal.500" }}
+              >
+                {log.exercise}
+              </Heading>
+              <HStack spacing={2}>
+                <IconButton
+                  icon={<EditIcon />}
+                  colorScheme="blue"
+                  size="sm"
+                  onClick={() => openChangeExercise(exerciseIndex)}
+                  aria-label="Change Exercise"
+                />
+                <IconButton
+                  icon={<DeleteIcon />}
+                  colorScheme="red"
+                  size="sm"
+                  onClick={() => deleteExercise(exerciseIndex)}
+                  aria-label="Delete Exercise"
+                />
+              </HStack>
+            </Flex>
             {previousData[log.exercise] && (
               <Text fontSize={{ base: "xs", md: "sm" }} color="gray.600" mb={2}>
                 Last: {previousData[log.exercise]["weight_kg"]}kg x{" "}
@@ -815,9 +886,18 @@ function DailyWorkoutLog({
                     borderColor="gray.200"
                     borderRadius="md"
                   >
-                    <Text fontWeight="bold" mb={1}>
-                      Set {setIndex + 1}
-                    </Text>
+                    <Flex justify="space-between" align="center" mb={1}>
+                      <Text fontWeight="bold">Set {setIndex + 1}</Text>
+                      {log.sets.length > 1 && (
+                        <IconButton
+                          icon={<DeleteIcon />}
+                          colorScheme="red"
+                          size="xs"
+                          onClick={() => deleteSet(exerciseIndex, setIndex)}
+                          aria-label="Delete Set"
+                        />
+                      )}
+                    </Flex>
                     <Flex direction="column" gap={2}>
                       <FormControl>
                         <FormLabel fontSize="xs">Weight (kg)</FormLabel>
@@ -957,7 +1037,23 @@ function DailyWorkoutLog({
                     );
                     return (
                       <Tr key={setIndex}>
-                        <Td width="10%">Set {setIndex + 1}</Td>
+                        <Td width="10%">
+                          <Flex align="center">
+                            Set {setIndex + 1}
+                            {log.sets.length > 1 && (
+                              <IconButton
+                                icon={<DeleteIcon />}
+                                colorScheme="red"
+                                size="xs"
+                                ml={2}
+                                onClick={() =>
+                                  deleteSet(exerciseIndex, setIndex)
+                                }
+                                aria-label="Delete Set"
+                              />
+                            )}
+                          </Flex>
+                        </Td>
                         <Td width="20%">
                           <Input
                             placeholder="Weight (kg)"
@@ -1192,7 +1288,7 @@ function DailyWorkoutLog({
                 }
               }}
             >
-              {allExercises.map((ex) => (
+              {exerciseLibrary.map((ex) => (
                 <option key={ex.Exercise} value={ex.Exercise}>
                   {ex.Exercise}
                 </option>
@@ -1235,75 +1331,61 @@ function DailyWorkoutLog({
                 {isEditMode ? (
                   <>
                     <FormControl>
-                      <FormLabel>Superset</FormLabel>
-                      <Select
-                        value={selectedExerciseDetails.superset || ""}
+                      <FormLabel>Target Muscle Group</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.targetMuscleGroup}
                         onChange={(e) =>
-                          handleEditFieldChange("superset", e.target.value)
+                          handleEditFieldChange(
+                            "targetMuscleGroup",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Video Demonstration Link</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.videoDemonstration}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "videoDemonstration",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>In-Depth Explanation Link</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.inDepthExplanation}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "inDepthExplanation",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Favorite</FormLabel>
+                      <Select
+                        value={selectedExerciseDetails.favorite || ""}
+                        onChange={(e) =>
+                          handleEditFieldChange("favorite", e.target.value)
                         }
                       >
                         <option value="">None</option>
-                        <option value="Y">Y</option>
-                        <option value="N">N</option>
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
                       </Select>
                     </FormControl>
                     <FormControl>
-                      <FormLabel>%1RM</FormLabel>
+                      <FormLabel>1 RM Alex (kg)</FormLabel>
                       <Input
-                        value={selectedExerciseDetails.load_prescription}
+                        type="number"
+                        value={selectedExerciseDetails.oneRmAlex}
                         onChange={(e) =>
-                          handleEditFieldChange(
-                            "load_prescription",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Calc. Target Load</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.calculated_target_load}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "calculated_target_load",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Target Reps</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.target_reps}
-                        onChange={(e) =>
-                          handleEditFieldChange("target_reps", e.target.value)
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Rest</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.rest}
-                        onChange={(e) =>
-                          handleEditFieldChange("rest", e.target.value)
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Tempo</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.tempo}
-                        onChange={(e) =>
-                          handleEditFieldChange("tempo", e.target.value)
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Time/Distance</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.time_distance}
-                        onChange={(e) =>
-                          handleEditFieldChange("time_distance", e.target.value)
+                          handleEditFieldChange("oneRmAlex", e.target.value)
                         }
                       />
                     </FormControl>
@@ -1311,24 +1393,48 @@ function DailyWorkoutLog({
                 ) : (
                   <>
                     <Text>
-                      Superset: {selectedExerciseDetails.superset || "N/A"}
+                      Target Muscle Group:{" "}
+                      {selectedExerciseDetails.targetMuscleGroup}
+                    </Text>
+                    {selectedExerciseDetails.videoDemonstration ? (
+                      <Text>
+                        Video Demonstration:{" "}
+                        <Text
+                          as="a"
+                          color="blue.500"
+                          href={selectedExerciseDetails.videoDemonstration}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          _hover={{ textDecoration: "underline" }}
+                        >
+                          Watch Video
+                        </Text>
+                      </Text>
+                    ) : (
+                      <Text>Video Demonstration: N/A</Text>
+                    )}
+                    {selectedExerciseDetails.inDepthExplanation ? (
+                      <Text>
+                        In-Depth Explanation:{" "}
+                        <Text
+                          as="a"
+                          color="blue.500"
+                          href={selectedExerciseDetails.inDepthExplanation}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          _hover={{ textDecoration: "underline" }}
+                        >
+                          Read More
+                        </Text>
+                      </Text>
+                    ) : (
+                      <Text>In-Depth Explanation: N/A</Text>
+                    )}
+                    <Text>
+                      Favorite: {selectedExerciseDetails.favorite || "N/A"}
                     </Text>
                     <Text>
-                      %1RM: {selectedExerciseDetails.load_prescription || "N/A"}
-                    </Text>
-                    <Text>
-                      Calc. Target Load:{" "}
-                      {selectedExerciseDetails.calculated_target_load || "N/A"}
-                    </Text>
-                    <Text>
-                      Target Reps:{" "}
-                      {selectedExerciseDetails.target_reps || "N/A"}
-                    </Text>
-                    <Text>Rest: {selectedExerciseDetails.rest || "N/A"}</Text>
-                    <Text>Tempo: {selectedExerciseDetails.tempo || "N/A"}</Text>
-                    <Text>
-                      Time/Distance:{" "}
-                      {selectedExerciseDetails.time_distance || "N/A"}
+                      1 RM Alex: {selectedExerciseDetails.oneRmAlex} kg
                     </Text>
                   </>
                 )}
@@ -1345,27 +1451,11 @@ function DailyWorkoutLog({
                 >
                   Edit Details
                 </Button>
-                <Button
-                  colorScheme="blue"
-                  mr={3}
-                  onClick={() => setIsChangeMode(true)}
-                >
-                  Change Exercise
-                </Button>
               </>
             )}
             {isEditMode && (
               <Button colorScheme="teal" mr={3} onClick={saveEditedDetails}>
                 Save Changes
-              </Button>
-            )}
-            {isChangeMode && (
-              <Button
-                colorScheme="blue"
-                mr={3}
-                onClick={() => setShowSearch(true)}
-              >
-                Select New Exercise
               </Button>
             )}
             <Button

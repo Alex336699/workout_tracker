@@ -54,7 +54,7 @@ function App() {
   return (
     <ChakraProvider>
       <BrowserRouter>
-        <Box minH="100vh" pb={{ base: "60px", md: "60px" }}>
+        <Box minH="100vh" pb="60px">
           {" "}
           {/* Padding for bottom nav on all devices */}
           {session && (
@@ -111,6 +111,9 @@ function App() {
                 left: 0,
                 right: 0,
                 zIndex: 1000, // Ensure it's above other content
+                backgroundColor: "white", // Ensure visibility on all backgrounds
+                padding: "10px",
+                boxShadow: "0 -2px 10px rgba(0, 0, 0, 0.1)", // Subtle shadow for elevation
               }}
             />
           )}
