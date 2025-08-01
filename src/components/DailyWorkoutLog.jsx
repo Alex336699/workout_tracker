@@ -470,23 +470,21 @@ function DailyWorkoutLog({
 
   // Smart search across multiple columns with performance optimization
   const filteredExercises = searchTerm
-    ? exerciseLibrary
-        .filter((ex) => {
-          const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
-          const searchableFields = [
-            ex.Exercise?.toLowerCase() || "",
-            ex.Target_Muscle_Group?.toLowerCase() || "",
-            ex.Primary_Equipment?.toLowerCase() || "",
-            ex.Mechanics?.toLowerCase() || "",
-            ex.Force_Type?.toLowerCase() || "",
-            ex.Favorite?.toString().toLowerCase() || "",
-          ].join(" "); // Combine fields into a single searchable string
+    ? exerciseLibrary.filter((ex) => {
+        const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
+        const searchableFields = [
+          ex.Exercise?.toLowerCase() || "",
+          ex.Target_Muscle_Group?.toLowerCase() || "",
+          ex.Primary_Equipment?.toLowerCase() || "",
+          ex.Mechanics?.toLowerCase() || "",
+          ex.Force_Type?.toLowerCase() || "",
+          ex.Favorite?.toString().toLowerCase() || "",
+        ].join(" "); // Combine fields into a single searchable string
 
-          // Smart search: match all terms in any order within the combined fields
-          return searchTerms.every((term) => searchableFields.includes(term));
-        })
-        .slice(0, 50) // Limit to first 50 results to improve performance
-    : exerciseLibrary.slice(0, 50); // Limit initial display for performance
+        // Smart search: match all terms in any order within the combined fields
+        return searchTerms.every((term) => searchableFields.includes(term));
+      })
+    : exerciseLibrary; // Show all exercises when no search term is entered
 
   // Determine if current input beats the last performance
   const getPerformanceStatus = (exercise, currentWeight, currentReps) => {
