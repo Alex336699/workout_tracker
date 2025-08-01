@@ -18,6 +18,11 @@ import {
   List,
   ListItem,
   Select,
+  VStack,
+  HStack,
+  FormControl,
+  FormLabel,
+  useBreakpointValue,
 } from "@chakra-ui/react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
@@ -51,6 +56,7 @@ function DailyWorkoutLog({
   const [showSearch, setShowSearch] = useState(false);
   const isInitialized = useRef(false); // Track if logs are already initialized
   const isDataFetched = useRef(false); // Track if data fetching is complete
+  const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if on mobile view
 
   // Initialize logs with pre-loaded data if available from navigation state
   useEffect(() => {
@@ -449,56 +455,85 @@ function DailyWorkoutLog({
   }
 
   return (
-    <Box mt={6} p={4} bg="gray.50" borderRadius="md" maxW="100%">
+    <Box
+      mt={6}
+      p={{ base: 2, md: 4 }}
+      bg="gray.50"
+      borderRadius="md"
+      maxW="100%"
+    >
       <Heading size="md" mb={4}>
         Daily Workout Log
       </Heading>
       <Box mb={4}>
         <Text mb={2}>Log Details:</Text>
-        <Flex gap={2} wrap="wrap">
-          <Input
-            type="date"
-            value={currentDate}
-            onChange={(e) => setCurrentDate(e.target.value)}
-            width={{ base: "full", md: "200px" }}
-            placeholder="Log Date"
-          />
-          <Input
-            placeholder="Program Name"
-            value={programDetails.program_name}
-            onChange={(e) =>
-              handleProgramDetailsChange("program_name", e.target.value)
-            }
-            width={{ base: "full", md: "200px" }}
-          />
-          <Input
-            placeholder="Macro Cycle"
-            value={programDetails.program_macro_cycle}
-            onChange={(e) =>
-              handleProgramDetailsChange("program_macro_cycle", e.target.value)
-            }
-            width={{ base: "full", md: "200px" }}
-          />
-          <Input
-            placeholder="Week"
-            value={programDetails.week}
-            onChange={(e) => handleProgramDetailsChange("week", e.target.value)}
-            width={{ base: "full", md: "100px" }}
-          />
-          <Input
-            placeholder="Day"
-            value={programDetails.day}
-            onChange={(e) => handleProgramDetailsChange("day", e.target.value)}
-            width={{ base: "full", md: "100px" }}
-          />
-          <Input
-            placeholder="Focus"
-            value={programDetails.focus}
-            onChange={(e) =>
-              handleProgramDetailsChange("focus", e.target.value)
-            }
-            width={{ base: "full", md: "150px" }}
-          />
+        <Flex gap={2} wrap="wrap" direction={{ base: "column", md: "row" }}>
+          <FormControl width={{ base: "full", md: "200px" }}>
+            <FormLabel fontSize={{ base: "sm", md: "md" }}>Date</FormLabel>
+            <Input
+              type="date"
+              value={currentDate}
+              onChange={(e) => setCurrentDate(e.target.value)}
+              size={{ base: "md", md: "sm" }}
+            />
+          </FormControl>
+          <FormControl width={{ base: "full", md: "200px" }}>
+            <FormLabel fontSize={{ base: "sm", md: "md" }}>
+              Program Name
+            </FormLabel>
+            <Input
+              value={programDetails.program_name}
+              onChange={(e) =>
+                handleProgramDetailsChange("program_name", e.target.value)
+              }
+              size={{ base: "md", md: "sm" }}
+            />
+          </FormControl>
+          <FormControl width={{ base: "full", md: "200px" }}>
+            <FormLabel fontSize={{ base: "sm", md: "md" }}>
+              Macro Cycle
+            </FormLabel>
+            <Input
+              value={programDetails.program_macro_cycle}
+              onChange={(e) =>
+                handleProgramDetailsChange(
+                  "program_macro_cycle",
+                  e.target.value
+                )
+              }
+              size={{ base: "md", md: "sm" }}
+            />
+          </FormControl>
+          <FormControl width={{ base: "full", md: "100px" }}>
+            <FormLabel fontSize={{ base: "sm", md: "md" }}>Week</FormLabel>
+            <Input
+              value={programDetails.week}
+              onChange={(e) =>
+                handleProgramDetailsChange("week", e.target.value)
+              }
+              size={{ base: "md", md: "sm" }}
+            />
+          </FormControl>
+          <FormControl width={{ base: "full", md: "100px" }}>
+            <FormLabel fontSize={{ base: "sm", md: "md" }}>Day</FormLabel>
+            <Input
+              value={programDetails.day}
+              onChange={(e) =>
+                handleProgramDetailsChange("day", e.target.value)
+              }
+              size={{ base: "md", md: "sm" }}
+            />
+          </FormControl>
+          <FormControl width={{ base: "full", md: "150px" }}>
+            <FormLabel fontSize={{ base: "sm", md: "md" }}>Focus</FormLabel>
+            <Input
+              value={programDetails.focus}
+              onChange={(e) =>
+                handleProgramDetailsChange("focus", e.target.value)
+              }
+              size={{ base: "md", md: "sm" }}
+            />
+          </FormControl>
         </Flex>
       </Box>
       {logs.length > 0 ? (
@@ -506,7 +541,7 @@ function DailyWorkoutLog({
           <Box
             key={exerciseIndex}
             mb={6}
-            p={3}
+            p={{ base: 2, md: 3 }}
             bg="white"
             borderRadius="md"
             boxShadow="sm"
@@ -515,7 +550,7 @@ function DailyWorkoutLog({
               {log.exercise}
             </Heading>
             {previousData[log.exercise] && (
-              <Text fontSize="sm" color="gray.600" mb={2}>
+              <Text fontSize={{ base: "xs", md: "sm" }} color="gray.600" mb={2}>
                 Last: {previousData[log.exercise]["weight_kg"]}kg x{" "}
                 {previousData[log.exercise].reps}
                 {previousData[log.exercise].rpe
@@ -524,119 +559,152 @@ function DailyWorkoutLog({
               </Text>
             )}
             <Box mb={3}>
-              <Text fontSize="sm" mb={1}>
+              <Text fontSize={{ base: "xs", md: "sm" }} mb={1}>
                 Exercise Details (Editable):
               </Text>
-              <Flex gap={2} wrap="wrap">
-                <Input
-                  placeholder="Superset"
-                  value={log.superset}
-                  onChange={(e) =>
-                    handleInputChange(
-                      exerciseIndex,
-                      -1,
-                      "superset",
-                      e.target.value
-                    )
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "100px" }}
-                />
-                <Input
-                  placeholder="Load Prescription (%1RM)"
-                  value={log.load_prescription}
-                  onChange={(e) =>
-                    handleInputChange(
-                      exerciseIndex,
-                      -1,
-                      "load_prescription",
-                      e.target.value
-                    )
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "150px" }}
-                />
-                <Input
-                  placeholder="Calc. Target Load"
-                  value={log.calculated_target_load}
-                  onChange={(e) =>
-                    handleInputChange(
-                      exerciseIndex,
-                      -1,
-                      "calculated_target_load",
-                      e.target.value
-                    )
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "150px" }}
-                />
-                <Input
-                  placeholder="Target Reps"
-                  value={log.target_reps}
-                  onChange={(e) =>
-                    handleInputChange(
-                      exerciseIndex,
-                      -1,
-                      "target_reps",
-                      e.target.value
-                    )
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "100px" }}
-                />
-                <Input
-                  placeholder="Rest"
-                  value={log.rest}
-                  onChange={(e) =>
-                    handleInputChange(exerciseIndex, -1, "rest", e.target.value)
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "80px" }}
-                />
-                <Input
-                  placeholder="Tempo"
-                  value={log.tempo}
-                  onChange={(e) =>
-                    handleInputChange(
-                      exerciseIndex,
-                      -1,
-                      "tempo",
-                      e.target.value
-                    )
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "80px" }}
-                />
-                <Input
-                  placeholder="Time/Distance"
-                  value={log.time_distance}
-                  onChange={(e) =>
-                    handleInputChange(
-                      exerciseIndex,
-                      -1,
-                      "time_distance",
-                      e.target.value
-                    )
-                  }
-                  size="xs"
-                  width={{ base: "full", md: "120px" }}
-                />
+              <Flex
+                gap={2}
+                wrap="wrap"
+                direction={{ base: "column", md: "row" }}
+              >
+                <FormControl width={{ base: "full", md: "100px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Superset
+                  </FormLabel>
+                  <Input
+                    value={log.superset}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "superset",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
+                <FormControl width={{ base: "full", md: "150px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Load Prescription (%1RM)
+                  </FormLabel>
+                  <Input
+                    value={log.load_prescription}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "load_prescription",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
+                <FormControl width={{ base: "full", md: "150px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Calc. Target Load
+                  </FormLabel>
+                  <Input
+                    value={log.calculated_target_load}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "calculated_target_load",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
+                <FormControl width={{ base: "full", md: "100px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Target Reps
+                  </FormLabel>
+                  <Input
+                    value={log.target_reps}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "target_reps",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
+                <FormControl width={{ base: "full", md: "80px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Rest
+                  </FormLabel>
+                  <Input
+                    value={log.rest}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "rest",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
+                <FormControl width={{ base: "full", md: "80px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Tempo
+                  </FormLabel>
+                  <Input
+                    value={log.tempo}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "tempo",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
+                <FormControl width={{ base: "full", md: "120px" }}>
+                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
+                    Time/Distance
+                  </FormLabel>
+                  <Input
+                    value={log.time_distance}
+                    onChange={(e) =>
+                      handleInputChange(
+                        exerciseIndex,
+                        -1,
+                        "time_distance",
+                        e.target.value
+                      )
+                    }
+                    size={{ base: "md", md: "xs" }}
+                  />
+                </FormControl>
               </Flex>
             </Box>
-            <Table variant="simple" size="sm" mb={2}>
-              <Tbody>
-                {log.sets.map((set, setIndex) => {
-                  const status = getPerformanceStatus(
-                    log.exercise,
-                    set.weight,
-                    set.reps
-                  );
-                  return (
-                    <Tr key={setIndex}>
-                      <Td width="10%">Set {setIndex + 1}</Td>
-                      <Td width="20%">
+            {isMobile ? (
+              <VStack spacing={3} align="stretch" mb={2}>
+                {log.sets.map((set, setIndex) => (
+                  <Box
+                    key={setIndex}
+                    p={2}
+                    border="1px solid"
+                    borderColor="gray.200"
+                    borderRadius="md"
+                  >
+                    <Text fontWeight="bold" mb={1}>
+                      Set {setIndex + 1}
+                    </Text>
+                    <Flex direction="column" gap={2}>
+                      <FormControl>
+                        <FormLabel fontSize="xs">Weight (kg)</FormLabel>
                         <Input
-                          placeholder="Weight (kg)"
                           type="number"
                           value={set.weight}
                           onChange={(e) =>
@@ -647,13 +715,19 @@ function DailyWorkoutLog({
                               e.target.value
                             )
                           }
-                          size="sm"
-                          bg={status.color}
+                          size="md"
+                          bg={
+                            getPerformanceStatus(
+                              log.exercise,
+                              set.weight,
+                              set.reps
+                            ).color
+                          }
                         />
-                      </Td>
-                      <Td width="20%">
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs">Reps</FormLabel>
                         <Input
-                          placeholder="Reps"
                           type="number"
                           value={set.reps}
                           onChange={(e) =>
@@ -664,13 +738,19 @@ function DailyWorkoutLog({
                               e.target.value
                             )
                           }
-                          size="sm"
-                          bg={status.color}
+                          size="md"
+                          bg={
+                            getPerformanceStatus(
+                              log.exercise,
+                              set.weight,
+                              set.reps
+                            ).color
+                          }
                         />
-                      </Td>
-                      <Td width="15%">
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs">RPE (1-10)</FormLabel>
                         <Input
-                          placeholder="RPE (1-10)"
                           type="number"
                           value={set.rpe}
                           onChange={(e) =>
@@ -681,29 +761,33 @@ function DailyWorkoutLog({
                               e.target.value
                             )
                           }
-                          size="sm"
+                          size="md"
                           bg="gray.50"
                         />
-                      </Td>
-                      <Td width="10%">
-                        <Checkbox
-                          isChecked={set.completed}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "completed",
-                              e.target.checked
-                            )
-                          }
-                          size="md"
-                        >
-                          Done
-                        </Checkbox>
-                      </Td>
-                      <Td width="25%">
+                      </FormControl>
+                      <FormControl>
+                        <Flex align="center">
+                          <Checkbox
+                            isChecked={set.completed}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "completed",
+                                e.target.checked
+                              )
+                            }
+                            size="md"
+                            mr={2}
+                          />
+                          <FormLabel fontSize="xs" mb={0}>
+                            Done
+                          </FormLabel>
+                        </Flex>
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs">Notes</FormLabel>
                         <Textarea
-                          placeholder="Notes"
                           value={set.notes}
                           onChange={(e) =>
                             handleInputChange(
@@ -713,27 +797,151 @@ function DailyWorkoutLog({
                               e.target.value
                             )
                           }
-                          size="sm"
-                          rows={1}
+                          size="md"
+                          rows={2}
                         />
-                      </Td>
-                      <Td width="10%">
-                        <Text
-                          fontSize="xs"
-                          color={
-                            status.color !== "gray.50"
-                              ? status.color.replace(".100", ".700")
-                              : "gray.500"
-                          }
-                        >
-                          {status.message}
-                        </Text>
-                      </Td>
-                    </Tr>
-                  );
-                })}
-              </Tbody>
-            </Table>
+                      </FormControl>
+                      <Text
+                        fontSize="xs"
+                        color={
+                          getPerformanceStatus(
+                            log.exercise,
+                            set.weight,
+                            set.reps
+                          ).color !== "gray.50"
+                            ? getPerformanceStatus(
+                                log.exercise,
+                                set.weight,
+                                set.reps
+                              ).color.replace(".100", ".700")
+                            : "gray.500"
+                        }
+                      >
+                        {
+                          getPerformanceStatus(
+                            log.exercise,
+                            set.weight,
+                            set.reps
+                          ).message
+                        }
+                      </Text>
+                    </Flex>
+                  </Box>
+                ))}
+              </VStack>
+            ) : (
+              <Table variant="simple" size="sm" mb={2}>
+                <Tbody>
+                  {log.sets.map((set, setIndex) => {
+                    const status = getPerformanceStatus(
+                      log.exercise,
+                      set.weight,
+                      set.reps
+                    );
+                    return (
+                      <Tr key={setIndex}>
+                        <Td width="10%">Set {setIndex + 1}</Td>
+                        <Td width="20%">
+                          <Input
+                            placeholder="Weight (kg)"
+                            type="number"
+                            value={set.weight}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "weight",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg={status.color}
+                          />
+                        </Td>
+                        <Td width="20%">
+                          <Input
+                            placeholder="Reps"
+                            type="number"
+                            value={set.reps}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "reps",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg={status.color}
+                          />
+                        </Td>
+                        <Td width="15%">
+                          <Input
+                            placeholder="RPE (1-10)"
+                            type="number"
+                            value={set.rpe}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "rpe",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg="gray.50"
+                          />
+                        </Td>
+                        <Td width="10%">
+                          <Checkbox
+                            isChecked={set.completed}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "completed",
+                                e.target.checked
+                              )
+                            }
+                            size="md"
+                          >
+                            Done
+                          </Checkbox>
+                        </Td>
+                        <Td width="25%">
+                          <Textarea
+                            placeholder="Notes"
+                            value={set.notes}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "notes",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            rows={1}
+                          />
+                        </Td>
+                        <Td width="10%">
+                          <Text
+                            fontSize="xs"
+                            color={
+                              status.color !== "gray.50"
+                                ? status.color.replace(".100", ".700")
+                                : "gray.500"
+                            }
+                          >
+                            {status.message}
+                          </Text>
+                        </Td>
+                      </Tr>
+                    );
+                  })}
+                </Tbody>
+              </Table>
+            )}
             <Button
               colorScheme="gray"
               size="sm"
@@ -759,7 +967,13 @@ function DailyWorkoutLog({
           {showSearch ? "Cancel" : "Add New Exercise"}
         </Button>
         {showSearch && (
-          <Box mt={2} p={3} bg="white" borderRadius="md" boxShadow="md">
+          <Box
+            mt={2}
+            p={{ base: 2, md: 3 }}
+            bg="white"
+            borderRadius="md"
+            boxShadow="md"
+          >
             <Heading size="sm" mb={2}>
               Add Exercise
             </Heading>

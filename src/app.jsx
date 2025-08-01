@@ -7,7 +7,7 @@ import Signup from "./pages/Signup";
 import Dashboard from "./pages/dashboard";
 import ExerciseLibrary from "./pages/ExerciseLibrary";
 import WorkoutPrograms from "./pages/WorkoutPrograms";
-import DailyWorkoutLog from "./components/DailyWorkoutLog"; // Ensure this is correctly imported
+import DailyWorkoutLog from "./components/DailyWorkoutLog";
 import BottomNavigation from "./components/BottomNavigation";
 
 function App() {
