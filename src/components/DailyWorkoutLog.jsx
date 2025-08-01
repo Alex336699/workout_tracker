@@ -63,6 +63,8 @@ function DailyWorkoutLog({
     if (location.state?.exercises && location.state.exercises.length > 0) {
       const initialLogs = location.state.exercises.map((ex) => {
         const targetSets = parseInt(ex.target_sets) || 1; // Default to 1 set if not defined
+        const targetWeight = ex.target_weight_kg || ""; // Use target_weight_kg if available
+        console.log(`Exercise: ${ex.exercise}, Target Weight: ${targetWeight}`);
         return {
           exercise: ex.exercise,
           superset: ex.superset || "",
@@ -73,7 +75,7 @@ function DailyWorkoutLog({
           tempo: ex.target_tempo || "",
           time_distance: ex.target_time_distance || "",
           sets: Array.from({ length: targetSets }, () => ({
-            weight: ex.target_weight_kg || "", // Pre-fill with target_weight_kg if available
+            weight: targetWeight, // Pre-fill with target_weight_kg if available
             reps: ex.target_reps || "", // Pre-fill with target reps
             rpe: ex.target_rpe || "",
             completed: false,
@@ -91,6 +93,10 @@ function DailyWorkoutLog({
     } else if (selectedExercises.length > 0) {
       const initialLogs = selectedExercises.map((ex) => {
         const targetSets = parseInt(programData[ex.Exercise]?.target_sets) || 1; // Default to 1 set if not defined
+        const targetWeight = programData[ex.Exercise]?.target_weight_kg || ""; // Use target_weight_kg if available
+        console.log(
+          `Exercise: ${ex.Exercise}, Target Weight from programData: ${targetWeight}`
+        );
         return {
           exercise: ex.Exercise,
           superset: programData[ex.Exercise]?.superset || "",
@@ -103,7 +109,7 @@ function DailyWorkoutLog({
           tempo: programData[ex.Exercise]?.target_tempo || "",
           time_distance: programData[ex.Exercise]?.target_time_distance || "",
           sets: Array.from({ length: targetSets }, () => ({
-            weight: programData[ex.Exercise]?.target_weight_kg || "", // Pre-fill with target_weight_kg if available
+            weight: targetWeight, // Pre-fill with target_weight_kg if available
             reps: programData[ex.Exercise]?.target_reps || "", // Pre-fill with target reps
             rpe: programData[ex.Exercise]?.target_rpe || "",
             completed: false,
@@ -260,6 +266,11 @@ function DailyWorkoutLog({
     if (exercise) {
       const targetSets =
         parseInt(programData[exercise.Exercise]?.target_sets) || 1;
+      const targetWeight =
+        programData[exercise.Exercise]?.target_weight_kg || "";
+      console.log(
+        `Adding Exercise: ${exercise.Exercise}, Target Weight: ${targetWeight}`
+      );
       const newLog = {
         exercise: exercise.Exercise,
         superset: programData[exercise.Exercise]?.superset || "",
@@ -273,7 +284,7 @@ function DailyWorkoutLog({
         time_distance:
           programData[exercise.Exercise]?.target_time_distance || "",
         sets: Array.from({ length: targetSets }, () => ({
-          weight: programData[exercise.Exercise]?.target_weight_kg || "", // Pre-fill with target_weight_kg if available
+          weight: targetWeight, // Pre-fill with target_weight_kg if available
           reps: programData[exercise.Exercise]?.target_reps || "", // Pre-fill with target reps
           rpe: programData[exercise.Exercise]?.target_rpe || "",
           completed: false,
