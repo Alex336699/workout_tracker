@@ -54,9 +54,9 @@ function App() {
   return (
     <ChakraProvider>
       <BrowserRouter>
-        <Box minH="100vh" pb={{ base: "60px", md: "0" }}>
+        <Box minH="100vh" pb={{ base: "60px", md: "60px" }}>
           {" "}
-          {/* Padding for bottom nav on mobile */}
+          {/* Padding for bottom nav on all devices */}
           {session && (
             <Flex p={2} bg="gray.100" justify="flex-end">
               <Button size="sm" colorScheme="red" onClick={handleLogout}>
@@ -103,7 +103,17 @@ function App() {
               element={<Navigate to={session ? "/" : "/login"} replace />}
             />
           </Routes>
-          {session && <BottomNavigation />}
+          {session && (
+            <BottomNavigation
+              style={{
+                position: "fixed",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 1000, // Ensure it's above other content
+              }}
+            />
+          )}
         </Box>
       </BrowserRouter>
     </ChakraProvider>

@@ -23,6 +23,13 @@ import {
   FormControl,
   FormLabel,
   useBreakpointValue,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalBody,
+  ModalCloseButton,
 } from "@chakra-ui/react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
@@ -54,6 +61,11 @@ function DailyWorkoutLog({
   });
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
+  const [selectedExerciseDetails, setSelectedExerciseDetails] = useState(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isChangeMode, setIsChangeMode] = useState(false);
+  const [editExerciseIndex, setEditExerciseIndex] = useState(null);
   const isInitialized = useRef(false); // Track if logs are already initialized
   const isDataFetched = useRef(false); // Track if data fetching is complete
   const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if on mobile view
@@ -75,7 +87,7 @@ function DailyWorkoutLog({
           exercise: ex.exercise,
           superset: ex.superset || "",
           load_prescription: ex.load_prescription_p1RM || "",
-          calculated_target_load: "", // Adjust if calculated elsewhere
+          calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
           target_reps: ex.target_reps || "",
           rest: ex.target_rest || "",
           tempo: ex.target_tempo || "",
@@ -108,8 +120,7 @@ function DailyWorkoutLog({
           superset: programData[ex.Exercise]?.superset || "",
           load_prescription:
             programData[ex.Exercise]?.["load_prescription_p1RM"] || "",
-          calculated_target_load:
-            programData[ex.Exercise]?.calculated_target_load || "",
+          calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
           target_reps: programData[ex.Exercise]?.target_reps || "",
           rest: programData[ex.Exercise]?.target_rest || "",
           tempo: programData[ex.Exercise]?.target_tempo || "",
@@ -241,6 +252,17 @@ function DailyWorkoutLog({
     setProgramDetails((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Handle superset input restriction to Y, N, or empty
+  const handleSupersetChange = (exerciseIndex, value) => {
+    if (value === "" || value === "Y" || value === "N") {
+      setLogs((prevLogs) => {
+        const updatedLogs = [...prevLogs];
+        updatedLogs[exerciseIndex].superset = value;
+        return updatedLogs;
+      });
+    }
+  };
+
   // Add a new set for an exercise, prefilling with values from the last set
   const addSet = (exerciseIndex) => {
     setLogs((prevLogs) => {
@@ -282,8 +304,7 @@ function DailyWorkoutLog({
         superset: programData[exercise.Exercise]?.superset || "",
         load_prescription:
           programData[exercise.Exercise]?.["load_prescription_p1RM"] || "",
-        calculated_target_load:
-          programData[exercise.Exercise]?.calculated_target_load || "",
+        calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
         target_reps: programData[exercise.Exercise]?.target_reps || "",
         rest: programData[exercise.Exercise]?.target_rest || "",
         tempo: programData[exercise.Exercise]?.target_tempo || "",
@@ -304,9 +325,100 @@ function DailyWorkoutLog({
     }
   };
 
+  // Replace an existing exercise with a new one
+  const replaceExercise = (exerciseIndex, newExerciseName) => {
+    if (!newExerciseName) return;
+    const newExercise = allExercises.find(
+      (ex) => ex.Exercise === newExerciseName
+    );
+    if (newExercise) {
+      const targetSets =
+        parseInt(programData[newExercise.Exercise]?.target_sets) || 1;
+      const targetWeight =
+        programData[newExercise.Exercise]?.target_weight_kg || "";
+      console.log(
+        `Replacing Exercise at index ${exerciseIndex} with ${newExercise.Exercise}, Target Weight: ${targetWeight}`
+      );
+      const newLog = {
+        exercise: newExercise.Exercise,
+        superset: programData[newExercise.Exercise]?.superset || "",
+        load_prescription:
+          programData[newExercise.Exercise]?.["load_prescription_p1RM"] || "",
+        calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
+        target_reps: programData[newExercise.Exercise]?.target_reps || "",
+        rest: programData[newExercise.Exercise]?.target_rest || "",
+        tempo: programData[newExercise.Exercise]?.target_tempo || "",
+        time_distance:
+          programData[newExercise.Exercise]?.target_time_distance || "",
+        sets: Array.from({ length: targetSets }, () => ({
+          weight: targetWeight, // Pre-fill with target_weight_kg if available
+          reps: programData[newExercise.Exercise]?.target_reps || "", // Pre-fill with target reps
+          rpe: programData[newExercise.Exercise]?.target_rpe || "",
+          completed: false,
+          notes: "",
+        })),
+      };
+      setLogs((prev) => {
+        const updatedLogs = [...prev];
+        updatedLogs[exerciseIndex] = newLog;
+        return updatedLogs;
+      });
+      setSelectedExerciseDetails(null);
+      setIsChangeMode(false);
+      // Update selectedExercises
+      const updatedExercises = [...selectedExercises];
+      updatedExercises[exerciseIndex] = newExercise;
+      onUpdateExercises(updatedExercises);
+    }
+  };
+
+  // Open details modal for an exercise
+  const openDetailsModal = (exerciseIndex) => {
+    const exercise = logs[exerciseIndex];
+    setSelectedExerciseDetails({ ...exercise, index: exerciseIndex });
+    setIsDetailsModalOpen(true);
+    setIsEditMode(false);
+    setIsChangeMode(false);
+    setEditExerciseIndex(exerciseIndex);
+  };
+
+  // Save edited exercise details
+  const saveEditedDetails = () => {
+    if (selectedExerciseDetails) {
+      setLogs((prev) => {
+        const updatedLogs = [...prev];
+        updatedLogs[selectedExerciseDetails.index] = {
+          ...updatedLogs[selectedExerciseDetails.index],
+          superset: selectedExerciseDetails.superset,
+          load_prescription: selectedExerciseDetails.load_prescription,
+          calculated_target_load:
+            selectedExerciseDetails.calculated_target_load,
+          target_reps: selectedExerciseDetails.target_reps,
+          rest: selectedExerciseDetails.rest,
+          tempo: selectedExerciseDetails.tempo,
+          time_distance: selectedExerciseDetails.time_distance,
+        };
+        return updatedLogs;
+      });
+      setIsDetailsModalOpen(false);
+      setSelectedExerciseDetails(null);
+    }
+  };
+
+  // Handle edit field changes in modal
+  const handleEditFieldChange = (field, value) => {
+    setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
+  };
+
   // Advanced search across multiple columns
   const filteredExercises = searchTerm
     ? allExercises.filter((ex) => {
+        console.log(
+          "Searching with term:",
+          searchTerm,
+          "Total exercises:",
+          allExercises.length
+        );
         const terms = searchTerm.toLowerCase().split(" "); // Split search term into words
         const searchableFields = [
           ex.Exercise?.toLowerCase() || "",
@@ -546,8 +658,14 @@ function DailyWorkoutLog({
             borderRadius="md"
             boxShadow="sm"
           >
-            <Heading size="sm" mb={2}>
-              {log.exercise}
+            <Heading
+              size="sm"
+              mb={2}
+              onClick={() => openDetailsModal(exerciseIndex)}
+              cursor="pointer"
+              _hover={{ color: "teal.500" }}
+            >
+              {log.exercise} (Click for Details)
             </Heading>
             {previousData[log.exercise] && (
               <Text fontSize={{ base: "xs", md: "sm" }} color="gray.600" mb={2}>
@@ -571,22 +689,21 @@ function DailyWorkoutLog({
                   <FormLabel fontSize={{ base: "xs", md: "sm" }}>
                     Superset
                   </FormLabel>
-                  <Input
-                    value={log.superset}
+                  <Select
+                    value={log.superset || ""}
                     onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "superset",
-                        e.target.value
-                      )
+                      handleSupersetChange(exerciseIndex, e.target.value)
                     }
                     size={{ base: "md", md: "xs" }}
-                  />
+                  >
+                    <option value="">None</option>
+                    <option value="Y">Y</option>
+                    <option value="N">N</option>
+                  </Select>
                 </FormControl>
                 <FormControl width={{ base: "full", md: "150px" }}>
                   <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Load Prescription (%1RM)
+                    %1RM
                   </FormLabel>
                   <Input
                     value={log.load_prescription}
@@ -1009,7 +1126,13 @@ function DailyWorkoutLog({
                       p={2}
                       borderRadius="sm"
                       _hover={{ bg: "gray.100", cursor: "pointer" }}
-                      onClick={() => addExerciseToLog(ex.Exercise)}
+                      onClick={() => {
+                        if (isChangeMode) {
+                          replaceExercise(editExerciseIndex, ex.Exercise);
+                        } else {
+                          addExerciseToLog(ex.Exercise);
+                        }
+                      }}
                       borderBottom="1px solid"
                       borderColor="gray.200"
                     >
@@ -1061,7 +1184,11 @@ function DailyWorkoutLog({
               width={{ base: "full", md: "400px" }}
               onChange={(e) => {
                 if (e.target.value) {
-                  addExerciseToLog(e.target.value);
+                  if (isChangeMode) {
+                    replaceExercise(editExerciseIndex, e.target.value);
+                  } else {
+                    addExerciseToLog(e.target.value);
+                  }
                 }
               }}
             >
@@ -1086,6 +1213,170 @@ function DailyWorkoutLog({
           Save Workout Log
         </Button>
       </Flex>
+
+      {/* Details Modal for Exercise */}
+      <Modal
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        size={{ base: "full", md: "lg" }}
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            {selectedExerciseDetails?.exercise || "Exercise Details"}
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {selectedExerciseDetails && (
+              <VStack spacing={3} align="stretch">
+                <Text fontWeight="bold">
+                  Exercise: {selectedExerciseDetails.exercise}
+                </Text>
+                {isEditMode ? (
+                  <>
+                    <FormControl>
+                      <FormLabel>Superset</FormLabel>
+                      <Select
+                        value={selectedExerciseDetails.superset || ""}
+                        onChange={(e) =>
+                          handleEditFieldChange("superset", e.target.value)
+                        }
+                      >
+                        <option value="">None</option>
+                        <option value="Y">Y</option>
+                        <option value="N">N</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>%1RM</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.load_prescription}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "load_prescription",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Calc. Target Load</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.calculated_target_load}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "calculated_target_load",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Target Reps</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.target_reps}
+                        onChange={(e) =>
+                          handleEditFieldChange("target_reps", e.target.value)
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Rest</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.rest}
+                        onChange={(e) =>
+                          handleEditFieldChange("rest", e.target.value)
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Tempo</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.tempo}
+                        onChange={(e) =>
+                          handleEditFieldChange("tempo", e.target.value)
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Time/Distance</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.time_distance}
+                        onChange={(e) =>
+                          handleEditFieldChange("time_distance", e.target.value)
+                        }
+                      />
+                    </FormControl>
+                  </>
+                ) : (
+                  <>
+                    <Text>
+                      Superset: {selectedExerciseDetails.superset || "N/A"}
+                    </Text>
+                    <Text>
+                      %1RM: {selectedExerciseDetails.load_prescription || "N/A"}
+                    </Text>
+                    <Text>
+                      Calc. Target Load:{" "}
+                      {selectedExerciseDetails.calculated_target_load || "N/A"}
+                    </Text>
+                    <Text>
+                      Target Reps:{" "}
+                      {selectedExerciseDetails.target_reps || "N/A"}
+                    </Text>
+                    <Text>Rest: {selectedExerciseDetails.rest || "N/A"}</Text>
+                    <Text>Tempo: {selectedExerciseDetails.tempo || "N/A"}</Text>
+                    <Text>
+                      Time/Distance:{" "}
+                      {selectedExerciseDetails.time_distance || "N/A"}
+                    </Text>
+                  </>
+                )}
+              </VStack>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            {!isEditMode && !isChangeMode && (
+              <>
+                <Button
+                  colorScheme="teal"
+                  mr={3}
+                  onClick={() => setIsEditMode(true)}
+                >
+                  Edit Details
+                </Button>
+                <Button
+                  colorScheme="blue"
+                  mr={3}
+                  onClick={() => setIsChangeMode(true)}
+                >
+                  Change Exercise
+                </Button>
+              </>
+            )}
+            {isEditMode && (
+              <Button colorScheme="teal" mr={3} onClick={saveEditedDetails}>
+                Save Changes
+              </Button>
+            )}
+            {isChangeMode && (
+              <Button
+                colorScheme="blue"
+                mr={3}
+                onClick={() => setShowSearch(true)}
+              >
+                Select New Exercise
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => setIsDetailsModalOpen(false)}
+            >
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 }
