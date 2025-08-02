@@ -475,17 +475,54 @@ function DailyWorkoutLog({
   };
 
   // Save edited exercise details
-  const saveEditedDetails = () => {
-    if (selectedExerciseDetails) {
-      // Since we're not updating program data, just log the edit (or update if needed)
-      console.log(
-        "Edited details saved for:",
-        selectedExerciseDetails.exercise
-      );
-      setIsDetailsModalOpen(false);
-      setSelectedExerciseDetails(null);
-    }
-  };
+ const saveEditedDetails = async () => {
+  if (!selectedExerciseDetails) return;
+
+  try {
+    setSaving(true);
+    setError(null);
+
+    // Prepare the update data
+    const updateData = {
+      Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
+      Video_Demonstration: selectedExerciseDetails.videoDemonstration,
+      "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
+      Favorite: selectedExerciseDetails.favorite,
+      "1_RM_Alex": selectedExerciseDetails.oneRmAlex
+    };
+
+    // Update the Exercise Library table
+    const { error: updateError } = await supabase
+      .from("Exercise Library")
+      .update(updateData)
+      .eq("Exercise", selectedExerciseDetails.exercise);
+
+    if (updateError) throw updateError;
+
+    // Update local state to reflect changes
+    setExerciseLibrary(prevLibrary => 
+      prevLibrary.map(ex => 
+        ex.Exercise === selectedExerciseDetails.exercise 
+          ? { ...ex, ...updateData }
+          : ex
+      )
+    );
+
+    setSuccessMessage("Exercise details updated successfully!");
+    setIsDetailsModalOpen(false);
+    setSelectedExerciseDetails(null);
+    setIsEditMode(false);
+
+    // Clear success message after 3 seconds
+    setTimeout(() => setSuccessMessage(null), 3000);
+
+  } catch (err) {
+    console.error("Error updating exercise details:", err);
+    setError(err.message || "Failed to update exercise details");
+  } finally {
+    setSaving(false);
+  }
+};
 
   // Handle edit field changes in modal
   const handleEditFieldChange = (field, value) => {
@@ -1623,3 +1660,4 @@ function DailyWorkoutLog({
 }
 
 export default DailyWorkoutLog;
+
