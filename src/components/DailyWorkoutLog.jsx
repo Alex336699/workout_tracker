@@ -998,9 +998,4 @@ function DailyWorkoutLog({
                       {log.sets.length > 1 && (
                         <IconButton
                           icon={<DeleteIcon />}
-                          colorScheme="red"
-                          size="xs"
-                          onClick={() => deleteSet(exerciseIndex, setIndex)}
-                          aria-label="Delete Set"
-                        />
-                      )}
+                          colorScheme
