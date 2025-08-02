@@ -73,6 +73,9 @@ function DailyWorkoutLog({
   const isInitialized = useRef(false); // Track if logs are already initialized
   const isDataFetched = useRef(false); // Track if data fetching is complete
   const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if on mobile view
+  const [activeTimer, setActiveTimer] = useState(null); // { exerciseIndex, setIndex, startTime }
+  const [timerSeconds, setTimerSeconds] = useState(0);
+  const [timerInterval, setTimerInterval] = useState(null);
 
   // Fetch exercises from Supabase Exercise Library with pagination to get all records
   const fetchExerciseLibrary = async () => {
@@ -475,6 +478,7 @@ function DailyWorkoutLog({
   };
 
   // Save edited exercise details to Supabase
+  // Add this to your saveEditedDetails function, right before the update:
   const saveEditedDetails = async () => {
     if (!selectedExerciseDetails) return;
 
@@ -483,7 +487,9 @@ function DailyWorkoutLog({
       setError(null);
 
       // Check authentication first
-      const { data: { session } } = await supabase.auth.getSession();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
       if (!session) {
         setError("You must be logged in to update exercise details");
         return;
@@ -491,31 +497,96 @@ function DailyWorkoutLog({
 
       console.log("=== DEBUGGING SUPABASE UPDATE ===");
       console.log("Exercise name:", selectedExerciseDetails.exercise);
-      
+      console.log("User ID:", session.user.id);
+      console.log("User email:", session.user.email);
+
       // First, let's try to find the exact record
       const { data: findData, error: findError } = await supabase
         .from("Exercise Library")
         .select("*")
         .eq("Exercise", selectedExerciseDetails.exercise);
-      
+
       console.log("Found records:", findData);
       console.log("Find error:", findError);
-      
+
       if (findError) throw findError;
       if (!findData || findData.length === 0) {
-        throw new Error(`Exercise "${selectedExerciseDetails.exercise}" not found in database`);
+        throw new Error(
+          `Exercise "${selectedExerciseDetails.exercise}" not found in database`
+        );
       }
 
-      // Prepare the update data
-      const updateData = {
-        Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
-        Video_Demonstration: selectedExerciseDetails.videoDemonstration,
-        "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
-        Favorite: selectedExerciseDetails.favorite,
-        "1_RM_Alex": selectedExerciseDetails.oneRmAlex
-      };
+      // Log the current record details
+      const currentRecord = findData[0];
+      console.log("Current record in DB:", currentRecord);
 
-      console.log("Update data:", updateData);
+      // Prepare the update data - make sure we're not updating with identical values
+      const updateData = {};
+
+      // Only include fields that have actually changed
+      if (
+        currentRecord.Target_Muscle_Group !==
+        selectedExerciseDetails.targetMuscleGroup
+      ) {
+        updateData.Target_Muscle_Group =
+          selectedExerciseDetails.targetMuscleGroup;
+        console.log(
+          `Target_Muscle_Group changed: "${currentRecord.Target_Muscle_Group}" -> "${selectedExerciseDetails.targetMuscleGroup}"`
+        );
+      }
+      if (
+        currentRecord.Video_Demonstration !==
+        selectedExerciseDetails.videoDemonstration
+      ) {
+        updateData.Video_Demonstration =
+          selectedExerciseDetails.videoDemonstration;
+        console.log(
+          `Video_Demonstration changed: "${currentRecord.Video_Demonstration}" -> "${selectedExerciseDetails.videoDemonstration}"`
+        );
+      }
+      if (
+        currentRecord["In-Depth_Explanation"] !==
+        selectedExerciseDetails.inDepthExplanation
+      ) {
+        updateData["In-Depth_Explanation"] =
+          selectedExerciseDetails.inDepthExplanation;
+        console.log(
+          `In-Depth_Explanation changed: "${currentRecord["In-Depth_Explanation"]}" -> "${selectedExerciseDetails.inDepthExplanation}"`
+        );
+      }
+      if (currentRecord.Favorite !== selectedExerciseDetails.favorite) {
+        updateData.Favorite = selectedExerciseDetails.favorite;
+        console.log(
+          `Favorite changed: "${currentRecord.Favorite}" -> "${selectedExerciseDetails.favorite}"`
+        );
+      }
+      if (currentRecord["1_RM_Alex"] !== selectedExerciseDetails.oneRmAlex) {
+        updateData["1_RM_Alex"] = selectedExerciseDetails.oneRmAlex;
+        console.log(
+          `1_RM_Alex changed: "${currentRecord["1_RM_Alex"]}" -> "${selectedExerciseDetails.oneRmAlex}"`
+        );
+      }
+
+      console.log("Update data (only changed fields):", updateData);
+
+      // If no fields have changed, don't perform update
+      if (Object.keys(updateData).length === 0) {
+        setSuccessMessage(
+          "No changes detected - exercise details are already up to date!"
+        );
+        setIsDetailsModalOpen(false);
+        setSelectedExerciseDetails(null);
+        setIsEditMode(false);
+        setTimeout(() => setSuccessMessage(null), 3000);
+        return;
+      }
+
+      // Attempt the update
+      console.log("Attempting update with query:", {
+        table: "Exercise Library",
+        update: updateData,
+        where: { Exercise: selectedExerciseDetails.exercise },
+      });
 
       // Update the Exercise Library table
       const { data: updateResult, error: updateError } = await supabase
@@ -527,30 +598,41 @@ function DailyWorkoutLog({
       console.log("Update result:", updateResult);
       console.log("Update error:", updateError);
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error("Supabase update error details:", updateError);
+        throw updateError;
+      }
 
-      // Check if any rows were actually updated
+      // Check if the update actually affected any rows
       if (!updateResult || updateResult.length === 0) {
-        throw new Error(`No exercise found with name: "${selectedExerciseDetails.exercise}"`);
+        console.error(
+          "Update returned empty result - likely RLS policy blocking update"
+        );
+        throw new Error(
+          "Update was blocked - this is likely due to Row Level Security policies. Check your Supabase table permissions."
+        );
       }
 
       // Update local state to reflect changes
-      setExerciseLibrary(prevLibrary => 
-        prevLibrary.map(ex => 
-          ex.Exercise === selectedExerciseDetails.exercise 
+      setExerciseLibrary((prevLibrary) =>
+        prevLibrary.map((ex) =>
+          ex.Exercise === selectedExerciseDetails.exercise
             ? { ...ex, ...updateData }
             : ex
         )
       );
 
-      setSuccessMessage(`Exercise details updated successfully! Updated ${updateResult.length} record(s).`);
+      setSuccessMessage(
+        `Exercise details updated successfully! Updated ${
+          Object.keys(updateData).length
+        } field(s).`
+      );
       setIsDetailsModalOpen(false);
       setSelectedExerciseDetails(null);
       setIsEditMode(false);
 
       // Clear success message after 3 seconds
       setTimeout(() => setSuccessMessage(null), 3000);
-
     } catch (err) {
       console.error("Error updating exercise details:", err);
       setError(err.message || "Failed to update exercise details");
@@ -559,42 +641,150 @@ function DailyWorkoutLog({
     }
   };
 
-  // Handle edit field changes in modal with enhanced validation
+  // --------------------------- next part -------------------------------------------------------------------------------------------------
+  //Handle edit field changes in modal with enhanced validation
   const handleEditFieldChange = (field, value) => {
     console.log(`Changing ${field} to:`, value, typeof value);
-    
+
     // Special handling for 1RM field to prevent number input issues
     if (field === "oneRmAlex") {
       console.log("1RM value being set:", value);
       // Allow empty, "N/A", or valid numbers
-      if (value === "" || value === "N/A" || value.toLowerCase() === "n/a" || !isNaN(parseFloat(value))) {
-        setSelectedExerciseDetails(prev => ({ ...prev, [field]: value }));
+      if (
+        value === "" ||
+        value === "N/A" ||
+        value.toLowerCase() === "n/a" ||
+        !isNaN(parseFloat(value))
+      ) {
+        setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
       }
       return;
     }
-    
+
     // Handle all other fields normally
-    setSelectedExerciseDetails(prev => ({ ...prev, [field]: value }));
+    setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
   };
 
-  // Smart search across multiple columns
+  // Timer functions
+  // Timer functions
+  const startTimer = (exerciseIndex, setIndex) => {
+    // Stop any existing timer first
+    stopTimer();
+
+    const startTime = Date.now();
+    setActiveTimer({ exerciseIndex, setIndex, startTime });
+    setTimerSeconds(0);
+
+    // Start the interval to update timer display
+    const interval = setInterval(() => {
+      setTimerSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+
+    setTimerInterval(interval);
+    console.log(
+      `Timer started for Exercise ${exerciseIndex}, Set ${setIndex + 1}`
+    );
+  };
+
+  const stopTimer = () => {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
+
+    if (activeTimer) {
+      const restTimeSeconds = Math.floor(
+        (Date.now() - activeTimer.startTime) / 1000
+      );
+      const restTimeFormatted = formatTime(restTimeSeconds);
+
+      console.log(`Timer stopped. Rest time: ${restTimeFormatted}`);
+
+      // Update the rest field for the specific set (using existing rest field)
+      handleInputChange(
+        activeTimer.exerciseIndex,
+        activeTimer.setIndex,
+        "rest",
+        restTimeFormatted
+      );
+
+      setActiveTimer(null);
+      setTimerSeconds(0);
+      return restTimeFormatted;
+    }
+    return null;
+  };
+
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  };
+
+  const isTimerActiveForSet = (exerciseIndex, setIndex) => {
+    return (
+      activeTimer &&
+      activeTimer.exerciseIndex === exerciseIndex &&
+      activeTimer.setIndex === setIndex
+    );
+  };
+
+  // Smart search across multiple columns with favorite prioritization
+  // Smart search across multiple columns with favorite prioritization
   const filteredExercises = searchTerm
-    ? exerciseLibrary.filter((ex) => {
-        const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
-        const searchableFields = [
-          ex.Exercise?.toLowerCase() || "",
-          ex.Target_Muscle_Group?.toLowerCase() || "",
-          ex.Primary_Equipment?.toLowerCase() || "",
-          ex.Mechanics?.toLowerCase() || "",
-          ex.Force_Type?.toLowerCase() || "",
-          ex.Favorite?.toString().toLowerCase() || "",
-        ].join(" "); // Combine fields into a single searchable string
+    ? exerciseLibrary
+        .filter((ex) => {
+          const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
+          const searchableFields = [
+            ex.Exercise?.toLowerCase() || "",
+            ex.Target_Muscle_Group?.toLowerCase() || "",
+            ex.Primary_Equipment?.toLowerCase() || "",
+            ex.Mechanics?.toLowerCase() || "",
+            ex.Force_Type?.toLowerCase() || "",
+            ex.Favorite?.toString().toLowerCase() || "",
+          ].join(" "); // Combine fields into a single searchable string
 
-        // Smart search: match all terms in any order within the combined fields
-        return searchTerms.every((term) => searchableFields.includes(term));
-      })
-    : exerciseLibrary; // Show all exercises when no search term is entered
+          // Smart search: match all terms in any order within the combined fields
+          return searchTerms.every((term) => searchableFields.includes(term));
+        })
+        .sort((a, b) => {
+          // Helper function to check if an exercise is marked as favorite
+          const isFavorite = (exercise) => {
+            const favoriteValue = exercise.Favorite?.toString().toLowerCase();
+            return favoriteValue === "yes" || favoriteValue === "y";
+          };
 
+          const aIsFavorite = isFavorite(a);
+          const bIsFavorite = isFavorite(b); // Fixed this line - was missing 'isFavorite('
+
+          // If both are favorites or both are not favorites, sort alphabetically by exercise name
+          if (aIsFavorite === bIsFavorite) {
+            return (a.Exercise || "").localeCompare(b.Exercise || "");
+          }
+
+          // Favorites come first
+          return aIsFavorite ? -1 : 1;
+        })
+    : exerciseLibrary.sort((a, b) => {
+        // Even when no search term, show favorites first, then alphabetical
+        const isFavorite = (exercise) => {
+          const favoriteValue = exercise.Favorite?.toString().toLowerCase();
+          return favoriteValue === "yes" || favoriteValue === "y";
+        };
+
+        const aIsFavorite = isFavorite(a);
+        const bIsFavorite = isFavorite(b);
+
+        // If both are favorites or both are not favorites, sort alphabetically by exercise name
+        if (aIsFavorite === bIsFavorite) {
+          return (a.Exercise || "").localeCompare(b.Exercise || "");
+        }
+
+        // Favorites come first
+        return aIsFavorite ? -1 : 1;
+      });
+
+  // --------------------next function
   // Determine if current input beats the last performance
   const getPerformanceStatus = (exercise, currentWeight, currentReps) => {
     const last = previousData[exercise];
@@ -667,7 +857,7 @@ function DailyWorkoutLog({
               calculated_target_load: log.calculated_target_load || "N/A",
               target_reps: log.target_reps || "N/A",
               previous_rep_x_kg: previousRepKg,
-              rest: log.rest || "N/A",
+              rest: set.rest || log.rest || "N/A",
               tempo: log.tempo || "N/A",
               time_distance: log.time_distance || "N/A",
               completed: set.completed || false,
@@ -705,7 +895,23 @@ function DailyWorkoutLog({
     }
   };
 
-// ADD DEBUGGING CODE HERE
+  // Enhanced checkbox handler that starts/stops timer
+  const handleSetCompletion = (exerciseIndex, setIndex, isCompleted) => {
+    // Update the completed status
+    handleInputChange(exerciseIndex, setIndex, "completed", isCompleted);
+
+    if (isCompleted) {
+      // Set is marked as done - start timer
+      startTimer(exerciseIndex, setIndex);
+    } else {
+      // Set is unmarked - stop timer if it's active for this set
+      if (isTimerActiveForSet(exerciseIndex, setIndex)) {
+        stopTimer();
+      }
+    }
+  };
+
+  // ADD DEBUGGING CODE HERE
   useEffect(() => {
     console.log("=== DEBUGGING VALUES ===");
     logs.forEach((log, logIndex) => {
@@ -717,19 +923,27 @@ function DailyWorkoutLog({
           reps: set.reps,
           repsType: typeof set.reps,
           rpe: set.rpe,
-          rpeType: typeof set.rpe
+          rpeType: typeof set.rpe,
         });
       });
     });
-    
+
     if (selectedExerciseDetails) {
       console.log("Selected exercise details:", {
         oneRmAlex: selectedExerciseDetails.oneRmAlex,
-        oneRmAlexType: typeof selectedExerciseDetails.oneRmAlex
+        oneRmAlexType: typeof selectedExerciseDetails.oneRmAlex,
       });
     }
   }, [logs, selectedExerciseDetails]);
 
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (timerInterval) {
+        clearInterval(timerInterval);
+      }
+    };
+  }, [timerInterval]);
 
   if (loading) {
     return <Spinner size="md" color="teal.500" mt={4} />;
@@ -1024,5 +1238,828 @@ function DailyWorkoutLog({
                       {log.sets.length > 1 && (
                         <IconButton
                           icon={<DeleteIcon />}
-                          colorScheme
+                          colorScheme="red"
+                          size="xs"
+                          onClick={() => deleteSet(exerciseIndex, setIndex)}
+                          aria-label="Delete Set"
+                        />
+                      )}
+                    </Flex>
+                    <Flex direction="column" gap={2}>
+                      <FormControl>
+                        <FormLabel fontSize="xs">Weight (kg)</FormLabel>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={set.weight || ""}
+                          onChange={(e) =>
+                            handleInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              "weight",
+                              e.target.value
+                            )
+                          }
+                          size="md"
+                          bg={
+                            getPerformanceStatus(
+                              log.exercise,
+                              set.weight,
+                              set.reps
+                            ).color
+                          }
+                          placeholder="Enter weight"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs">Reps</FormLabel>
+                        <Input
+                          type="text"
+                          inputMode="numeric"
+                          value={set.reps || ""}
+                          onChange={(e) =>
+                            handleInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              "reps",
+                              e.target.value
+                            )
+                          }
+                          size="md"
+                          bg={
+                            getPerformanceStatus(
+                              log.exercise,
+                              set.weight,
+                              set.reps
+                            ).color
+                          }
+                          placeholder="Enter reps"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs">RPE (1-10)</FormLabel>
+                        <Input
+                          type="text"
+                          inputMode="decimal"
+                          value={set.rpe || ""}
+                          onChange={(e) =>
+                            handleInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              "rpe",
+                              e.target.value
+                            )
+                          }
+                          size="md"
+                          bg="gray.50"
+                          placeholder="Enter RPE"
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <Flex align="center" justify="space-between">
+                          <Flex align="center">
+                            <Checkbox
+                              isChecked={set.completed}
+                              onChange={(e) =>
+                                handleSetCompletion(
+                                  exerciseIndex,
+                                  setIndex,
+                                  e.target.checked
+                                )
+                              }
+                              size="md"
+                              mr={2}
+                            />
+                            <FormLabel fontSize="xs" mb={0}>
+                              Done
+                            </FormLabel>
+                          </Flex>
 
+                          {/* Timer Display and Controls */}
+                          {isTimerActiveForSet(exerciseIndex, setIndex) && (
+                            <Flex align="center" gap={2}>
+                              <Text
+                                fontSize="xs"
+                                fontWeight="bold"
+                                color="green.600"
+                              >
+                                {formatTime(timerSeconds)}
+                              </Text>
+                              <Button
+                                size="xs"
+                                colorScheme="red"
+                                onClick={() => {
+                                  const restTime = stopTimer();
+                                  if (restTime) {
+                                    alert(`Rest time recorded: ${restTime}`);
+                                  }
+                                }}
+                              >
+                                Stop
+                              </Button>
+                            </Flex>
+                          )}
+                        </Flex>
+                      </FormControl>
+
+                      {/* Rest Time Field - Enhanced with timer integration */}
+                      <FormControl>
+                        <FormLabel fontSize="xs">Rest Time</FormLabel>
+                        <Input
+                          value={set.rest || ""}
+                          onChange={(e) =>
+                            handleInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              "rest",
+                              e.target.value
+                            )
+                          }
+                          size="md"
+                          placeholder={
+                            isTimerActiveForSet(exerciseIndex, setIndex)
+                              ? "Timer running..."
+                              : "Enter rest time"
+                          }
+                          bg={
+                            isTimerActiveForSet(exerciseIndex, setIndex)
+                              ? "green.50"
+                              : "gray.50"
+                          }
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel fontSize="xs">Notes</FormLabel>
+                        <Textarea
+                          value={set.notes || ""}
+                          onChange={(e) =>
+                            handleInputChange(
+                              exerciseIndex,
+                              setIndex,
+                              "notes",
+                              e.target.value
+                            )
+                          }
+                          size="md"
+                          rows={2}
+                          placeholder="Add notes"
+                        />
+                      </FormControl>
+                      <Text
+                        fontSize="xs"
+                        color={
+                          getPerformanceStatus(
+                            log.exercise,
+                            set.weight,
+                            set.reps
+                          ).color !== "gray.50"
+                            ? getPerformanceStatus(
+                                log.exercise,
+                                set.weight,
+                                set.reps
+                              ).color.replace(".100", ".700")
+                            : "gray.500"
+                        }
+                      >
+                        {
+                          getPerformanceStatus(
+                            log.exercise,
+                            set.weight,
+                            set.reps
+                          ).message
+                        }
+                      </Text>
+                    </Flex>
+                  </Box>
+                ))}
+              </VStack>
+            ) : (
+              <Table variant="simple" size="sm" mb={2}>
+                <Tbody>
+                  {log.sets.map((set, setIndex) => {
+                    const status = getPerformanceStatus(
+                      log.exercise,
+                      set.weight,
+                      set.reps
+                    );
+                    return (
+                      <Tr key={setIndex}>
+                        <Td width="10%">
+                          <Flex align="center">
+                            Set {setIndex + 1}
+                            {log.sets.length > 1 && (
+                              <IconButton
+                                icon={<DeleteIcon />}
+                                colorScheme="red"
+                                size="xs"
+                                ml={2}
+                                onClick={() =>
+                                  deleteSet(exerciseIndex, setIndex)
+                                }
+                                aria-label="Delete Set"
+                              />
+                            )}
+                          </Flex>
+                        </Td>
+                        <Td width="20%">
+                          <Input
+                            placeholder="Weight (kg)"
+                            type="number"
+                            value={set.weight}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "weight",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg={status.color}
+                          />
+                        </Td>
+                        <Td width="20%">
+                          <Input
+                            placeholder="Reps"
+                            type="number"
+                            value={set.reps}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "reps",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg={status.color}
+                          />
+                        </Td>
+                        <Td width="15%">
+                          <Input
+                            placeholder="RPE (1-10)"
+                            type="number"
+                            value={set.rpe}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "rpe",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg="gray.50"
+                          />
+                        </Td>
+                        <Td width="15%">
+                          <VStack spacing={1}>
+                            <Flex align="center">
+                              <Checkbox
+                                isChecked={set.completed}
+                                onChange={(e) =>
+                                  handleSetCompletion(
+                                    exerciseIndex,
+                                    setIndex,
+                                    e.target.checked
+                                  )
+                                }
+                                size="md"
+                                mr={2}
+                              />
+                              <Text fontSize="sm">Done</Text>
+                            </Flex>
+
+                            {/* Timer Display */}
+                            {isTimerActiveForSet(exerciseIndex, setIndex) && (
+                              <Flex align="center" gap={1}>
+                                <Text
+                                  fontSize="xs"
+                                  fontWeight="bold"
+                                  color="green.600"
+                                >
+                                  {formatTime(timerSeconds)}
+                                </Text>
+                                <Button
+                                  size="xs"
+                                  colorScheme="red"
+                                  onClick={() => {
+                                    const restTime = stopTimer();
+                                    if (restTime) {
+                                      alert(`Rest time recorded: ${restTime}`);
+                                    }
+                                  }}
+                                >
+                                  Stop
+                                </Button>
+                              </Flex>
+                            )}
+                          </VStack>
+                        </Td>
+                        <Td width="25%">
+                          <Textarea
+                            placeholder="Notes"
+                            value={set.notes}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "notes",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            rows={1}
+                          />
+                        </Td>
+                        <Td width="10%">
+                          <Input
+                            placeholder="Rest time"
+                            value={set.rest || ""}
+                            onChange={(e) =>
+                              handleInputChange(
+                                exerciseIndex,
+                                setIndex,
+                                "rest",
+                                e.target.value
+                              )
+                            }
+                            size="sm"
+                            bg={
+                              isTimerActiveForSet(exerciseIndex, setIndex)
+                                ? "green.50"
+                                : "gray.50"
+                            }
+                          />
+                        </Td>
+
+                        <Td width="10%">
+                          <Text
+                            fontSize="xs"
+                            color={
+                              status.color !== "gray.50"
+                                ? status.color.replace(".100", ".700")
+                                : "gray.500"
+                            }
+                          >
+                            {status.message}
+                          </Text>
+                        </Td>
+                      </Tr>
+                    );
+                  })}
+                </Tbody>
+              </Table>
+            )}
+            <Button
+              colorScheme="gray"
+              size="sm"
+              onClick={() => addSet(exerciseIndex)}
+              mb={2}
+            >
+              Add Set
+            </Button>
+          </Box>
+        ))
+      ) : (
+        <Text mt={4} mb={4} color="gray.500">
+          No exercises added yet. Add an exercise to start logging.
+        </Text>
+      )}
+      <Box mt={4}>
+        <Button
+          colorScheme="blue"
+          size="md"
+          onClick={() => {
+            setShowSearch(!showSearch);
+            setShowChangeSearchModal(false); // Close modal if open
+            setIsChangeMode(false); // Reset change mode
+          }}
+          mb={2}
+        >
+          {showSearch ? "Cancel" : "Add New Exercise"}
+        </Button>
+        {showSearch && (
+          <Box
+            mt={2}
+            p={{ base: 2, md: 3 }}
+            bg="white"
+            borderRadius="md"
+            boxShadow="md"
+          >
+            <Heading size="sm" mb={2}>
+              Add Exercise
+            </Heading>
+            <Input
+              placeholder="Search exercises by name, muscle group, equipment..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              size="md"
+              mb={2}
+              width={{ base: "full", md: "400px" }}
+            />
+            {searchTerm && (
+              <Box
+                maxH="300px"
+                overflowY="auto"
+                bg="white"
+                borderRadius="md"
+                boxShadow="md"
+                p={2}
+                mt={-2}
+              >
+                <List spacing={1}>
+                  {filteredExercises.length === 0 && (
+                    <ListItem>
+                      <Text fontSize="sm" color="gray.500">
+                        No matching exercises found.
+                      </Text>
+                    </ListItem>
+                  )}
+                  {filteredExercises.map((ex) => (
+                    <ListItem
+                      key={ex.Exercise}
+                      p={2}
+                      borderRadius="sm"
+                      _hover={{ bg: "gray.100", cursor: "pointer" }}
+                      onClick={() => {
+                        if (isChangeMode) {
+                          replaceExercise(editExerciseIndex, ex.Exercise);
+                        } else {
+                          addExerciseToLog(ex.Exercise);
+                        }
+                      }}
+                      borderBottom="1px solid"
+                      borderColor="gray.200"
+                    >
+                      <Text fontWeight="bold" fontSize="md">
+                        {ex.Exercise}
+                      </Text>
+                      <Text fontSize="sm" color="gray.600">
+                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
+                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
+                        {ex.Mechanics || "N/A"}
+                      </Text>
+                      <Flex gap={2} mt={1}>
+                        {ex.Video_Demonstration && (
+                          <Text
+                            fontSize="xs"
+                            color="blue.500"
+                            as="a"
+                            href={ex.Video_Demonstration}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            _hover={{ textDecoration: "underline" }}
+                          >
+                            Video Demo
+                          </Text>
+                        )}
+                        {ex["In-Depth_Explanation"] && (
+                          <Text
+                            fontSize="xs"
+                            color="blue.500"
+                            as="a"
+                            href={ex["In-Depth_Explanation"]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            _hover={{ textDecoration: "underline" }}
+                          >
+                            Explanation
+                          </Text>
+                        )}
+                      </Flex>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+            <Select
+              placeholder="Or select from list"
+              size="sm"
+              mt={2}
+              width={{ base: "full", md: "400px" }}
+              onChange={(e) => {
+                if (e.target.value) {
+                  if (isChangeMode) {
+                    replaceExercise(editExerciseIndex, e.target.value);
+                  } else {
+                    addExerciseToLog(e.target.value);
+                  }
+                }
+              }}
+            >
+              {exerciseLibrary.map((ex) => (
+                <option key={ex.Exercise} value={ex.Exercise}>
+                  {ex.Exercise}
+                </option>
+              ))}
+            </Select>
+          </Box>
+        )}
+      </Box>
+      <Flex justify="center" mt={4}>
+        <Button
+          colorScheme="teal"
+          size="lg"
+          onClick={saveLogs}
+          isLoading={saving}
+          w={{ base: "full", md: "auto" }}
+          isDisabled={logs.length === 0}
+        >
+          Save Workout Log
+        </Button>
+      </Flex>
+
+      {/* Details Modal for Exercise */}
+      <Modal
+        isOpen={isDetailsModalOpen}
+        onClose={() => setIsDetailsModalOpen(false)}
+        size={{ base: "full", md: "lg" }}
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>
+            {selectedExerciseDetails?.exercise || "Exercise Details"}
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {selectedExerciseDetails && (
+              <VStack spacing={3} align="stretch">
+                <Text fontWeight="bold">
+                  Exercise: {selectedExerciseDetails.exercise}
+                </Text>
+                {isEditMode ? (
+                  <>
+                    <FormControl>
+                      <FormLabel>Target Muscle Group</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.targetMuscleGroup}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "targetMuscleGroup",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Video Demonstration Link</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.videoDemonstration}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "videoDemonstration",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>In-Depth Explanation Link</FormLabel>
+                      <Input
+                        value={selectedExerciseDetails.inDepthExplanation}
+                        onChange={(e) =>
+                          handleEditFieldChange(
+                            "inDepthExplanation",
+                            e.target.value
+                          )
+                        }
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>Favorite</FormLabel>
+                      <Select
+                        value={selectedExerciseDetails.favorite || ""}
+                        onChange={(e) =>
+                          handleEditFieldChange("favorite", e.target.value)
+                        }
+                      >
+                        <option value="">None</option>
+                        <option value="Yes">Yes</option>
+                        <option value="No">No</option>
+                      </Select>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel>1 RM Alex (kg)</FormLabel>
+                      <Input
+                        type="text"
+                        value={
+                          selectedExerciseDetails.oneRmAlex === null ||
+                          selectedExerciseDetails.oneRmAlex === undefined
+                            ? ""
+                            : String(selectedExerciseDetails.oneRmAlex)
+                        }
+                        onChange={(e) =>
+                          handleEditFieldChange("oneRmAlex", e.target.value)
+                        }
+                        placeholder="Enter weight in kg or N/A"
+                      />
+                    </FormControl>
+                  </>
+                ) : (
+                  <>
+                    <Text>
+                      Target Muscle Group:{" "}
+                      {selectedExerciseDetails.targetMuscleGroup}
+                    </Text>
+                    {selectedExerciseDetails.videoDemonstration ? (
+                      <Text>
+                        Video Demonstration:{" "}
+                        <Text
+                          as="a"
+                          color="blue.500"
+                          href={selectedExerciseDetails.videoDemonstration}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          _hover={{ textDecoration: "underline" }}
+                        >
+                          Watch Video
+                        </Text>
+                      </Text>
+                    ) : (
+                      <Text>Video Demonstration: N/A</Text>
+                    )}
+                    {selectedExerciseDetails.inDepthExplanation ? (
+                      <Text>
+                        In-Depth Explanation:{" "}
+                        <Text
+                          as="a"
+                          color="blue.500"
+                          href={selectedExerciseDetails.inDepthExplanation}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          _hover={{ textDecoration: "underline" }}
+                        >
+                          Read More
+                        </Text>
+                      </Text>
+                    ) : (
+                      <Text>In-Depth Explanation: N/A</Text>
+                    )}
+                    <Text>
+                      Favorite: {selectedExerciseDetails.favorite || "N/A"}
+                    </Text>
+                    <Text>
+                      1 RM Alex: {selectedExerciseDetails.oneRmAlex} kg
+                    </Text>
+                  </>
+                )}
+              </VStack>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            {!isEditMode && !isChangeMode && (
+              <>
+                <Button
+                  colorScheme="teal"
+                  mr={3}
+                  onClick={() => setIsEditMode(true)}
+                >
+                  Edit Details
+                </Button>
+              </>
+            )}
+            {isEditMode && (
+              <Button colorScheme="teal" mr={3} onClick={saveEditedDetails}>
+                Save Changes
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              onClick={() => setIsDetailsModalOpen(false)}
+            >
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Change Exercise Search Modal */}
+      <Modal
+        isOpen={showChangeSearchModal}
+        onClose={() => {
+          setShowChangeSearchModal(false);
+          setIsChangeMode(false);
+        }}
+        size={{ base: "full", md: "lg" }}
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Change Exercise</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Input
+              placeholder="Search exercises by name, muscle group, equipment..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              size="md"
+              mb={2}
+              width="full"
+            />
+            {searchTerm && (
+              <Box
+                maxH="300px"
+                overflowY="auto"
+                bg="white"
+                borderRadius="md"
+                boxShadow="md"
+                p={2}
+                mt={-2}
+              >
+                <List spacing={1}>
+                  {filteredExercises.length === 0 && (
+                    <ListItem>
+                      <Text fontSize="sm" color="gray.500">
+                        No matching exercises found.
+                      </Text>
+                    </ListItem>
+                  )}
+                  {filteredExercises.map((ex) => (
+                    <ListItem
+                      key={ex.Exercise}
+                      p={2}
+                      borderRadius="sm"
+                      _hover={{ bg: "gray.100", cursor: "pointer" }}
+                      onClick={() => {
+                        replaceExercise(editExerciseIndex, ex.Exercise);
+                      }}
+                      borderBottom="1px solid"
+                      borderColor="gray.200"
+                    >
+                      <Text fontWeight="bold" fontSize="md">
+                        {ex.Exercise}
+                      </Text>
+                      <Text fontSize="sm" color="gray.600">
+                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
+                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
+                        {ex.Mechanics || "N/A"}
+                      </Text>
+                      <Flex gap={2} mt={1}>
+                        {ex.Video_Demonstration && (
+                          <Text
+                            fontSize="xs"
+                            color="blue.500"
+                            as="a"
+                            href={ex.Video_Demonstration}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            _hover={{ textDecoration: "underline" }}
+                          >
+                            Video Demo
+                          </Text>
+                        )}
+                        {ex["In-Depth_Explanation"] && (
+                          <Text
+                            fontSize="xs"
+                            color="blue.500"
+                            as="a"
+                            href={ex["In-Depth_Explanation"]}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            _hover={{ textDecoration: "underline" }}
+                          >
+                            Explanation
+                          </Text>
+                        )}
+                      </Flex>
+                    </ListItem>
+                  ))}
+                </List>
+              </Box>
+            )}
+            <Select
+              placeholder="Or select from list"
+              size="sm"
+              mt={2}
+              width="full"
+              onChange={(e) => {
+                if (e.target.value) {
+                  replaceExercise(editExerciseIndex, e.target.value);
+                }
+              }}
+            >
+              {exerciseLibrary.map((ex) => (
+                <option key={ex.Exercise} value={ex.Exercise}>
+                  {ex.Exercise}
+                </option>
+              ))}
+            </Select>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setShowChangeSearchModal(false);
+                setIsChangeMode(false);
+              }}
+            >
+              Close
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+    </Box>
+  );
+}
+
+export default DailyWorkoutLog;
