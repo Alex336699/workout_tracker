@@ -35,6 +35,7 @@ import {
 import { DeleteIcon, EditIcon } from "@chakra-ui/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
+import { ArrowBackIcon } from "@chakra-ui/icons";
 
 function DailyWorkoutLog({
   selectedExercises = [],
@@ -975,9 +976,21 @@ function DailyWorkoutLog({
       borderRadius="md"
       maxW="100%"
     >
-      <Heading size="md" mb={4}>
-        Daily Workout Log
-      </Heading>
+      {/* Header with Back Button */}
+      <Flex align="center" justify="space-between" mb={4}>
+        <Flex align="center">
+          <IconButton
+            icon={<ArrowBackIcon />}
+            colorScheme="teal"
+            size="md"
+            onClick={() => navigate("/")}
+            aria-label="Back to Dashboard"
+            mr={3}
+          />
+          <Heading size="md">Daily Workout Log</Heading>
+        </Flex>
+      </Flex>
+
       <Box mb={4}>
         <Text mb={2}>Log Details:</Text>
         <Flex gap={2} wrap="wrap" direction={{ base: "column", md: "row" }}>
@@ -1461,7 +1474,7 @@ function DailyWorkoutLog({
                             )}
                           </Flex>
                         </Td>
-                        <Td width="20%">
+                        <Td width="15%">
                           <Input
                             placeholder="Weight (kg)"
                             type="number"
@@ -1478,7 +1491,7 @@ function DailyWorkoutLog({
                             bg={status.color}
                           />
                         </Td>
-                        <Td width="20%">
+                        <Td width="12%">
                           <Input
                             placeholder="Reps"
                             type="number"
@@ -1495,7 +1508,7 @@ function DailyWorkoutLog({
                             bg={status.color}
                           />
                         </Td>
-                        <Td width="15%">
+                        <Td width="10%">
                           <Input
                             placeholder="RPE (1-10)"
                             type="number"
@@ -1572,7 +1585,7 @@ function DailyWorkoutLog({
                             rows={1}
                           />
                         </Td>
-                        <Td width="10%">
+                        <Td width="15%">
                           <Input
                             placeholder="Rest time"
                             value={set.rest || ""}
@@ -1769,7 +1782,6 @@ function DailyWorkoutLog({
           Save Workout Log
         </Button>
       </Flex>
-
       {/* Details Modal for Exercise */}
       <Modal
         isOpen={isDetailsModalOpen}
@@ -1933,7 +1945,6 @@ function DailyWorkoutLog({
           </ModalFooter>
         </ModalContent>
       </Modal>
-
       {/* Change Exercise Search Modal */}
       <Modal
         isOpen={showChangeSearchModal}
