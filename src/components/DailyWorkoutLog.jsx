@@ -705,6 +705,32 @@ function DailyWorkoutLog({
     }
   };
 
+// ADD DEBUGGING CODE HERE
+  useEffect(() => {
+    console.log("=== DEBUGGING VALUES ===");
+    logs.forEach((log, logIndex) => {
+      console.log(`Exercise ${logIndex}: ${log.exercise}`);
+      log.sets.forEach((set, setIndex) => {
+        console.log(`  Set ${setIndex}:`, {
+          weight: set.weight,
+          weightType: typeof set.weight,
+          reps: set.reps,
+          repsType: typeof set.reps,
+          rpe: set.rpe,
+          rpeType: typeof set.rpe
+        });
+      });
+    });
+    
+    if (selectedExerciseDetails) {
+      console.log("Selected exercise details:", {
+        oneRmAlex: selectedExerciseDetails.oneRmAlex,
+        oneRmAlexType: typeof selectedExerciseDetails.oneRmAlex
+      });
+    }
+  }, [logs, selectedExerciseDetails]);
+
+
   if (loading) {
     return <Spinner size="md" color="teal.500" mt={4} />;
   }
@@ -999,3 +1025,4 @@ function DailyWorkoutLog({
                         <IconButton
                           icon={<DeleteIcon />}
                           colorScheme
+
