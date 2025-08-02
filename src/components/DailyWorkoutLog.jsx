@@ -31,11 +31,24 @@ import {
   ModalBody,
   ModalCloseButton,
   IconButton,
+  Grid,
+  Link,
 } from "@chakra-ui/react";
 import { DeleteIcon, EditIcon } from "@chakra-ui/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
 import { ArrowBackIcon } from "@chakra-ui/icons";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
 
 function DailyWorkoutLog({
   selectedExercises = [],
@@ -50,6 +63,7 @@ function DailyWorkoutLog({
   const [programData, setProgramData] = useState({});
   const [exerciseLibrary, setExerciseLibrary] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editingExercise, setEditingExercise] = useState(null);
   const [error, setError] = useState(null);
   const [saving, setSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -77,6 +91,10 @@ function DailyWorkoutLog({
   const [activeTimer, setActiveTimer] = useState(null); // { exerciseIndex, setIndex, startTime }
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerInterval, setTimerInterval] = useState(null);
+  // PR tracking state
+  const [prData, setPrData] = useState([]);
+  const [loadingPrData, setLoadingPrData] = useState(false);
+  const [prError, setPrError] = useState(null);
 
   // Fetch exercises from Supabase Exercise Library with pagination to get all records
   const fetchExerciseLibrary = async () => {
@@ -445,6 +463,7 @@ function DailyWorkoutLog({
   };
 
   // Open details modal for an exercise
+  // Open details modal for an exercise with PR data
   const openDetailsModal = (exerciseIndex) => {
     const exercise = logs[exerciseIndex];
     // Find additional details from exerciseLibrary if available
@@ -454,6 +473,7 @@ function DailyWorkoutLog({
           ex.Exercise.trim().toLowerCase() ===
           exercise.exercise.trim().toLowerCase()
       ) || {};
+
     setSelectedExerciseDetails({
       ...exercise,
       index: exerciseIndex,
@@ -463,10 +483,14 @@ function DailyWorkoutLog({
       favorite: exerciseDetails.Favorite || "",
       oneRmAlex: exerciseDetails["1_RM_Alex"] || "N/A",
     });
+
     setIsDetailsModalOpen(true);
     setIsEditMode(false);
     setIsChangeMode(false);
     setEditExerciseIndex(exerciseIndex);
+
+    // Fetch PR data for this exercise
+    fetchPrData(exercise.exercise);
   };
 
   // Open change exercise mode
@@ -481,7 +505,7 @@ function DailyWorkoutLog({
   // Save edited exercise details to Supabase
   // Add this to your saveEditedDetails function, right before the update:
   const saveEditedDetails = async () => {
-    if (!selectedExerciseDetails) return;
+    if (!editingExercise) return;
 
     try {
       setSaving(true);
@@ -502,10 +526,11 @@ function DailyWorkoutLog({
       console.log("User email:", session.user.email);
 
       // First, let's try to find the exact record
+      // First, let's try to find the exact record
       const { data: findData, error: findError } = await supabase
         .from("Exercise Library")
         .select("*")
-        .eq("Exercise", selectedExerciseDetails.exercise);
+        .eq("Exercise", editingExercise.exercise);
 
       console.log("Found records:", findData);
       console.log("Find error:", findError);
@@ -513,7 +538,7 @@ function DailyWorkoutLog({
       if (findError) throw findError;
       if (!findData || findData.length === 0) {
         throw new Error(
-          `Exercise "${selectedExerciseDetails.exercise}" not found in database`
+          `Exercise "${editingExercise.exercise}" not found in database`
         );
       }
 
@@ -526,46 +551,26 @@ function DailyWorkoutLog({
 
       // Only include fields that have actually changed
       if (
-        currentRecord.Target_Muscle_Group !==
-        selectedExerciseDetails.targetMuscleGroup
+        currentRecord.Target_Muscle_Group !== editingExercise.targetMuscleGroup
       ) {
-        updateData.Target_Muscle_Group =
-          selectedExerciseDetails.targetMuscleGroup;
-        console.log(
-          `Target_Muscle_Group changed: "${currentRecord.Target_Muscle_Group}" -> "${selectedExerciseDetails.targetMuscleGroup}"`
-        );
+        updateData.Target_Muscle_Group = editingExercise.targetMuscleGroup;
       }
       if (
-        currentRecord.Video_Demonstration !==
-        selectedExerciseDetails.videoDemonstration
+        currentRecord.Video_Demonstration !== editingExercise.videoDemonstration
       ) {
-        updateData.Video_Demonstration =
-          selectedExerciseDetails.videoDemonstration;
-        console.log(
-          `Video_Demonstration changed: "${currentRecord.Video_Demonstration}" -> "${selectedExerciseDetails.videoDemonstration}"`
-        );
+        updateData.Video_Demonstration = editingExercise.videoDemonstration;
       }
       if (
         currentRecord["In-Depth_Explanation"] !==
-        selectedExerciseDetails.inDepthExplanation
+        editingExercise.inDepthExplanation
       ) {
-        updateData["In-Depth_Explanation"] =
-          selectedExerciseDetails.inDepthExplanation;
-        console.log(
-          `In-Depth_Explanation changed: "${currentRecord["In-Depth_Explanation"]}" -> "${selectedExerciseDetails.inDepthExplanation}"`
-        );
+        updateData["In-Depth_Explanation"] = editingExercise.inDepthExplanation;
       }
-      if (currentRecord.Favorite !== selectedExerciseDetails.favorite) {
-        updateData.Favorite = selectedExerciseDetails.favorite;
-        console.log(
-          `Favorite changed: "${currentRecord.Favorite}" -> "${selectedExerciseDetails.favorite}"`
-        );
+      if (currentRecord.Favorite !== editingExercise.favorite) {
+        updateData.Favorite = editingExercise.favorite;
       }
-      if (currentRecord["1_RM_Alex"] !== selectedExerciseDetails.oneRmAlex) {
-        updateData["1_RM_Alex"] = selectedExerciseDetails.oneRmAlex;
-        console.log(
-          `1_RM_Alex changed: "${currentRecord["1_RM_Alex"]}" -> "${selectedExerciseDetails.oneRmAlex}"`
-        );
+      if (currentRecord["1_RM_Alex"] !== editingExercise.oneRmAlex) {
+        updateData["1_RM_Alex"] = editingExercise.oneRmAlex;
       }
 
       console.log("Update data (only changed fields):", updateData);
@@ -578,22 +583,16 @@ function DailyWorkoutLog({
         setIsDetailsModalOpen(false);
         setSelectedExerciseDetails(null);
         setIsEditMode(false);
+        setEditingExercise(null);
         setTimeout(() => setSuccessMessage(null), 3000);
         return;
       }
-
-      // Attempt the update
-      console.log("Attempting update with query:", {
-        table: "Exercise Library",
-        update: updateData,
-        where: { Exercise: selectedExerciseDetails.exercise },
-      });
 
       // Update the Exercise Library table
       const { data: updateResult, error: updateError } = await supabase
         .from("Exercise Library")
         .update(updateData)
-        .eq("Exercise", selectedExerciseDetails.exercise)
+        .eq("Exercise", editingExercise.exercise)
         .select();
 
       console.log("Update result:", updateResult);
@@ -617,23 +616,28 @@ function DailyWorkoutLog({
       // Update local state to reflect changes
       setExerciseLibrary((prevLibrary) =>
         prevLibrary.map((ex) =>
-          ex.Exercise === selectedExerciseDetails.exercise
+          ex.Exercise === editingExercise.exercise
             ? { ...ex, ...updateData }
             : ex
         )
       );
+
+      // Update the selected exercise for the modal
+      setSelectedExerciseDetails((prev) => ({ ...prev, ...updateData }));
 
       setSuccessMessage(
         `Exercise details updated successfully! Updated ${
           Object.keys(updateData).length
         } field(s).`
       );
-      setIsDetailsModalOpen(false);
-      setSelectedExerciseDetails(null);
-      setIsEditMode(false);
 
-      // Clear success message after 3 seconds
-      setTimeout(() => setSuccessMessage(null), 3000);
+      // Close modal after success
+      setTimeout(() => {
+        setSuccessMessage(null);
+        setIsDetailsModalOpen(false);
+        setIsEditMode(false);
+        setEditingExercise(null);
+      }, 2000);
     } catch (err) {
       console.error("Error updating exercise details:", err);
       setError(err.message || "Failed to update exercise details");
@@ -644,6 +648,7 @@ function DailyWorkoutLog({
 
   // --------------------------- next part -------------------------------------------------------------------------------------------------
   //Handle edit field changes in modal with enhanced validation
+  // Handle edit field changes in modal with enhanced validation
   const handleEditFieldChange = (field, value) => {
     console.log(`Changing ${field} to:`, value, typeof value);
 
@@ -657,13 +662,13 @@ function DailyWorkoutLog({
         value.toLowerCase() === "n/a" ||
         !isNaN(parseFloat(value))
       ) {
-        setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
+        setEditingExercise((prev) => ({ ...prev, [field]: value }));
       }
       return;
     }
 
     // Handle all other fields normally
-    setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
+    setEditingExercise((prev) => ({ ...prev, [field]: value }));
   };
 
   // Timer functions
@@ -910,6 +915,130 @@ function DailyWorkoutLog({
         stopTimer();
       }
     }
+  };
+
+  // Fetch PR progression data for an exercise
+  const fetchPrData = async (exerciseName) => {
+    try {
+      setLoadingPrData(true);
+      setPrError(null);
+
+      console.log("Fetching PR data for:", exerciseName);
+
+      // Get current user session
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setPrError("You must be logged in to view PR data");
+        return;
+      }
+
+      // Fetch all workout logs for this exercise for the current user
+      const { data: workoutLogs, error } = await supabase
+        .from("Workout_Daily_Log")
+        .select("date, weight_kg, reps, rpe, set")
+        .eq("exercise", exerciseName)
+        .eq("user_id", session.user.id)
+        .order("date", { ascending: true });
+
+      if (error) {
+        console.error("Error fetching PR data:", error);
+        throw error;
+      }
+
+      console.log("Raw workout logs:", workoutLogs);
+
+      if (!workoutLogs || workoutLogs.length === 0) {
+        setPrData([]);
+        return;
+      }
+
+      // Process the data to calculate key strength metrics
+      const processedData = processWorkoutDataForPrChart(workoutLogs);
+      console.log("Processed PR data:", processedData);
+
+      setPrData(processedData);
+    } catch (err) {
+      console.error("Error fetching PR data:", err);
+      setPrError(err.message || "Failed to fetch PR data");
+    } finally {
+      setLoadingPrData(false);
+    }
+  };
+
+  // Process workout data into PR progression metrics
+  const processWorkoutDataForPrChart = (workoutLogs) => {
+    // Group by date and calculate daily bests
+    const dailyData = {};
+
+    workoutLogs.forEach((log) => {
+      const date = log.date;
+      const weight = parseFloat(log.weight_kg) || 0;
+      const reps = parseInt(log.reps) || 0;
+      const rpe = parseFloat(log.rpe) || null;
+
+      if (weight > 0 && reps > 0) {
+        if (!dailyData[date]) {
+          dailyData[date] = {
+            date,
+            maxWeight: weight,
+            bestSet: { weight, reps, rpe },
+            totalVolume: 0,
+            avgRpe: [],
+            estimated1RM: 0,
+          };
+        }
+
+        // Track max weight for the day
+        if (weight > dailyData[date].maxWeight) {
+          dailyData[date].maxWeight = weight;
+          dailyData[date].bestSet = { weight, reps, rpe };
+        }
+
+        // Calculate volume (weight x reps)
+        dailyData[date].totalVolume += weight * reps;
+
+        // Track RPE if available
+        if (rpe) {
+          dailyData[date].avgRpe.push(rpe);
+        }
+      }
+    });
+
+    // Convert to array and calculate additional metrics
+    const chartData = Object.values(dailyData).map((day) => {
+      const { weight, reps } = day.bestSet;
+
+      // Calculate estimated 1RM using Epley formula: weight * (1 + reps/30)
+      const estimated1RM = Math.round(weight * (1 + reps / 30));
+
+      // Calculate average RPE for the day
+      const avgRpe =
+        day.avgRpe.length > 0
+          ? Math.round(
+              (day.avgRpe.reduce((a, b) => a + b, 0) / day.avgRpe.length) * 10
+            ) / 10
+          : null;
+
+      return {
+        date: day.date,
+        formattedDate: new Date(day.date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+        maxWeight: day.maxWeight,
+        bestReps: day.bestSet.reps,
+        estimated1RM,
+        totalVolume: day.totalVolume,
+        avgRpe,
+        // Calculate relative intensity (% of estimated 1RM)
+        relativeIntensity: Math.round((day.maxWeight / estimated1RM) * 100),
+      };
+    });
+
+    // Sort by date
+    return chartData.sort((a, b) => new Date(a.date) - new Date(b.date));
   };
 
   // ADD DEBUGGING CODE HERE
@@ -1782,139 +1911,390 @@ function DailyWorkoutLog({
           Save Workout Log
         </Button>
       </Flex>
-      {/* Details Modal for Exercise */}
+      {/* Details Modal for Exercise with PR Chart */}
       <Modal
         isOpen={isDetailsModalOpen}
         onClose={() => setIsDetailsModalOpen(false)}
-        size={{ base: "full", md: "lg" }}
+        size={{ base: "full", md: "6xl" }} // Made larger to accommodate chart
       >
         <ModalOverlay />
-        <ModalContent>
+        <ModalContent maxH="90vh" overflowY="auto">
           <ModalHeader>
             {selectedExerciseDetails?.exercise || "Exercise Details"}
           </ModalHeader>
           <ModalCloseButton />
           <ModalBody>
+            {/* Error and Success Messages */}
+            {error && (
+              <Alert status="error" mb={4}>
+                <AlertIcon />
+                {error}
+              </Alert>
+            )}
+            {successMessage && (
+              <Alert status="success" mb={4}>
+                <AlertIcon />
+                {successMessage}
+              </Alert>
+            )}
+
             {selectedExerciseDetails && (
-              <VStack spacing={3} align="stretch">
-                <Text fontWeight="bold">
-                  Exercise: {selectedExerciseDetails.exercise}
-                </Text>
-                {isEditMode ? (
-                  <>
-                    <FormControl>
-                      <FormLabel>Target Muscle Group</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.targetMuscleGroup}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "targetMuscleGroup",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Video Demonstration Link</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.videoDemonstration}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "videoDemonstration",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>In-Depth Explanation Link</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.inDepthExplanation}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "inDepthExplanation",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Favorite</FormLabel>
-                      <Select
-                        value={selectedExerciseDetails.favorite || ""}
-                        onChange={(e) =>
-                          handleEditFieldChange("favorite", e.target.value)
-                        }
-                      >
-                        <option value="">None</option>
-                        <option value="Yes">Yes</option>
-                        <option value="No">No</option>
-                      </Select>
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>1 RM Alex (kg)</FormLabel>
-                      <Input
-                        type="text"
-                        value={
-                          selectedExerciseDetails.oneRmAlex === null ||
-                          selectedExerciseDetails.oneRmAlex === undefined
-                            ? ""
-                            : String(selectedExerciseDetails.oneRmAlex)
-                        }
-                        onChange={(e) =>
-                          handleEditFieldChange("oneRmAlex", e.target.value)
-                        }
-                        placeholder="Enter weight in kg or N/A"
-                      />
-                    </FormControl>
-                  </>
-                ) : (
-                  <>
-                    <Text>
-                      Target Muscle Group:{" "}
-                      {selectedExerciseDetails.targetMuscleGroup}
-                    </Text>
-                    {selectedExerciseDetails.videoDemonstration ? (
-                      <Text>
-                        Video Demonstration:{" "}
-                        <Text
-                          as="a"
-                          color="blue.500"
-                          href={selectedExerciseDetails.videoDemonstration}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          _hover={{ textDecoration: "underline" }}
+              <VStack spacing={6} align="stretch">
+                {/* Exercise Basic Info */}
+                <Box>
+                  <Text fontWeight="bold" fontSize="lg" mb={3}>
+                    Exercise: {selectedExerciseDetails.exercise}
+                  </Text>
+
+                  {isEditMode && editingExercise ? (
+                    <>
+                      <FormControl>
+                        <FormLabel>Target Muscle Group</FormLabel>
+                        <Input
+                          value={editingExercise.targetMuscleGroup}
+                          onChange={(e) =>
+                            handleEditFieldChange(
+                              "targetMuscleGroup",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Video Demonstration Link</FormLabel>
+                        <Input
+                          value={editingExercise.videoDemonstration}
+                          onChange={(e) =>
+                            handleEditFieldChange(
+                              "videoDemonstration",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>In-Depth Explanation Link</FormLabel>
+                        <Input
+                          value={editingExercise.inDepthExplanation}
+                          onChange={(e) =>
+                            handleEditFieldChange(
+                              "inDepthExplanation",
+                              e.target.value
+                            )
+                          }
+                        />
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>Favorite</FormLabel>
+                        <Select
+                          value={editingExercise.favorite || ""}
+                          onChange={(e) =>
+                            handleEditFieldChange("favorite", e.target.value)
+                          }
                         >
-                          Watch Video
-                        </Text>
-                      </Text>
-                    ) : (
-                      <Text>Video Demonstration: N/A</Text>
-                    )}
-                    {selectedExerciseDetails.inDepthExplanation ? (
+                          <option value="">None</option>
+                          <option value="Yes">Yes</option>
+                          <option value="No">No</option>
+                        </Select>
+                      </FormControl>
+                      <FormControl>
+                        <FormLabel>1 RM Alex (kg)</FormLabel>
+                        <Input
+                          type="text"
+                          value={
+                            editingExercise.oneRmAlex === null ||
+                            editingExercise.oneRmAlex === undefined
+                              ? ""
+                              : String(editingExercise.oneRmAlex)
+                          }
+                          onChange={(e) =>
+                            handleEditFieldChange("oneRmAlex", e.target.value)
+                          }
+                          placeholder="Enter weight in kg or N/A"
+                        />
+                      </FormControl>
+                    </>
+                  ) : (
+                    <Grid
+                      templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }}
+                      gap={4}
+                    >
                       <Text>
-                        In-Depth Explanation:{" "}
-                        <Text
-                          as="a"
-                          color="blue.500"
-                          href={selectedExerciseDetails.inDepthExplanation}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          _hover={{ textDecoration: "underline" }}
-                        >
-                          Read More
-                        </Text>
+                        <strong>Target Muscle:</strong>{" "}
+                        {selectedExerciseDetails.targetMuscleGroup}
                       </Text>
+                      <Text>
+                        <strong>Favorite:</strong>{" "}
+                        {selectedExerciseDetails.favorite || "N/A"}
+                      </Text>
+                      <Text>
+                        <strong>1 RM (Alex):</strong>{" "}
+                        {selectedExerciseDetails.oneRmAlex} kg
+                      </Text>
+                      {selectedExerciseDetails.videoDemonstration && (
+                        <Text>
+                          <strong>Video Demo:</strong>
+                          <Link
+                            href={selectedExerciseDetails.videoDemonstration}
+                            color="blue.500"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            ml={1}
+                          >
+                            Watch Here
+                          </Link>
+                        </Text>
+                      )}
+                    </Grid>
+                  )}
+                </Box>
+
+                {/* PR Progression Chart */}
+                {!isEditMode && (
+                  <Box>
+                    <Heading size="md" mb={4} color="teal.600">
+                      💪 Strength Progression Analysis
+                    </Heading>
+
+                    {loadingPrData ? (
+                      <Flex justify="center" align="center" h="300px">
+                        <Spinner size="lg" color="teal.500" />
+                        <Text ml={3}>Loading your PR data...</Text>
+                      </Flex>
+                    ) : prError ? (
+                      <Alert status="error">
+                        <AlertIcon />
+                        {prError}
+                      </Alert>
+                    ) : prData.length === 0 ? (
+                      <Alert status="info">
+                        <AlertIcon />
+                        No workout history found for this exercise. Complete
+                        some workouts to see your progression!
+                      </Alert>
                     ) : (
-                      <Text>In-Depth Explanation: N/A</Text>
+                      <VStack spacing={4} align="stretch">
+                        {/* Key Stats Summary */}
+                        <Grid
+                          templateColumns={{
+                            base: "repeat(2, 1fr)",
+                            md: "repeat(4, 1fr)",
+                          }}
+                          gap={4}
+                        >
+                          <Box
+                            bg="blue.50"
+                            p={3}
+                            borderRadius="md"
+                            textAlign="center"
+                          >
+                            <Text
+                              fontSize="sm"
+                              color="blue.600"
+                              fontWeight="bold"
+                            >
+                              Current 1RM Est.
+                            </Text>
+                            <Text fontSize="xl" fontWeight="bold">
+                              {prData[prData.length - 1]?.estimated1RM || 0} kg
+                            </Text>
+                          </Box>
+                          <Box
+                            bg="green.50"
+                            p={3}
+                            borderRadius="md"
+                            textAlign="center"
+                          >
+                            <Text
+                              fontSize="sm"
+                              color="green.600"
+                              fontWeight="bold"
+                            >
+                              Max Weight
+                            </Text>
+                            <Text fontSize="xl" fontWeight="bold">
+                              {Math.max(...prData.map((d) => d.maxWeight))} kg
+                            </Text>
+                          </Box>
+                          <Box
+                            bg="purple.50"
+                            p={3}
+                            borderRadius="md"
+                            textAlign="center"
+                          >
+                            <Text
+                              fontSize="sm"
+                              color="purple.600"
+                              fontWeight="bold"
+                            >
+                              Best Volume Day
+                            </Text>
+                            <Text fontSize="xl" fontWeight="bold">
+                              {Math.max(...prData.map((d) => d.totalVolume))} kg
+                            </Text>
+                          </Box>
+                          <Box
+                            bg="orange.50"
+                            p={3}
+                            borderRadius="md"
+                            textAlign="center"
+                          >
+                            <Text
+                              fontSize="sm"
+                              color="orange.600"
+                              fontWeight="bold"
+                            >
+                              Workouts
+                            </Text>
+                            <Text fontSize="xl" fontWeight="bold">
+                              {prData.length}
+                            </Text>
+                          </Box>
+                        </Grid>
+
+                        {/* Main PR Chart */}
+                        <Box bg="white" p={4} borderRadius="md" boxShadow="sm">
+                          <Text fontWeight="bold" mb={3}>
+                            Strength Progression Over Time
+                          </Text>
+                          <ResponsiveContainer width="100%" height={400}>
+                            <LineChart data={prData}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis
+                                dataKey="formattedDate"
+                                tick={{ fontSize: 12 }}
+                              />
+                              <YAxis
+                                label={{
+                                  value: "Weight (kg)",
+                                  angle: -90,
+                                  position: "insideLeft",
+                                }}
+                              />
+                              <Tooltip
+                                labelFormatter={(value, payload) => {
+                                  if (payload && payload[0]) {
+                                    const data = payload[0].payload;
+                                    return `Date: ${data.date}`;
+                                  }
+                                  return value;
+                                }}
+                                formatter={(value, name, props) => {
+                                  const data = props.payload;
+                                  if (name === "maxWeight") {
+                                    return [
+                                      `${value} kg (${data.bestReps} reps)`,
+                                      "Max Weight",
+                                    ];
+                                  }
+                                  if (name === "estimated1RM") {
+                                    return [`${value} kg`, "Estimated 1RM"];
+                                  }
+                                  return [value, name];
+                                }}
+                              />
+                              <Legend />
+                              <Line
+                                type="monotone"
+                                dataKey="maxWeight"
+                                stroke="#3182ce"
+                                strokeWidth={3}
+                                dot={{ fill: "#3182ce", strokeWidth: 2, r: 4 }}
+                                name="Max Weight"
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="estimated1RM"
+                                stroke="#38a169"
+                                strokeWidth={2}
+                                strokeDasharray="5 5"
+                                dot={{ fill: "#38a169", strokeWidth: 2, r: 3 }}
+                                name="Est. 1RM"
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </Box>
+
+                        {/* Volume Progression Chart */}
+                        <Box bg="white" p={4} borderRadius="md" boxShadow="sm">
+                          <Text fontWeight="bold" mb={3}>
+                            Training Volume Progression
+                          </Text>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <LineChart data={prData}>
+                              <CartesianGrid strokeDasharray="3 3" />
+                              <XAxis
+                                dataKey="formattedDate"
+                                tick={{ fontSize: 12 }}
+                              />
+                              <YAxis
+                                label={{
+                                  value: "Volume (kg)",
+                                  angle: -90,
+                                  position: "insideLeft",
+                                }}
+                              />
+                              <Tooltip
+                                formatter={(value) => [
+                                  `${value} kg`,
+                                  "Total Volume",
+                                ]}
+                              />
+                              <Line
+                                type="monotone"
+                                dataKey="totalVolume"
+                                stroke="#805ad5"
+                                strokeWidth={2}
+                                dot={{ fill: "#805ad5", strokeWidth: 2, r: 3 }}
+                              />
+                            </LineChart>
+                          </ResponsiveContainer>
+                        </Box>
+
+                        {/* Training Insights */}
+                        <Box bg="gray.50" p={4} borderRadius="md">
+                          <Text fontWeight="bold" mb={2}>
+                            🎯 Training Insights
+                          </Text>
+                          <VStack align="stretch" spacing={2}>
+                            {prData.length >= 2 && (
+                              <>
+                                <Text fontSize="sm">
+                                  <strong>1RM Progress:</strong>{" "}
+                                  {prData[prData.length - 1].estimated1RM >
+                                  prData[0].estimated1RM
+                                    ? `+${
+                                        prData[prData.length - 1].estimated1RM -
+                                        prData[0].estimated1RM
+                                      } kg since you started`
+                                    : "Keep pushing for strength gains!"}
+                                </Text>
+                                <Text fontSize="sm">
+                                  <strong>Consistency:</strong> {prData.length}{" "}
+                                  workout sessions logged
+                                </Text>
+                                <Text fontSize="sm">
+                                  <strong>Peak Performance:</strong>{" "}
+                                  {Math.max(...prData.map((d) => d.maxWeight))}{" "}
+                                  kg for{" "}
+                                  {
+                                    prData.find(
+                                      (d) =>
+                                        d.maxWeight ===
+                                        Math.max(
+                                          ...prData.map((d) => d.maxWeight)
+                                        )
+                                    )?.bestReps
+                                  }{" "}
+                                  reps
+                                </Text>
+                              </>
+                            )}
+                          </VStack>
+                        </Box>
+                      </VStack>
                     )}
-                    <Text>
-                      Favorite: {selectedExerciseDetails.favorite || "N/A"}
-                    </Text>
-                    <Text>
-                      1 RM Alex: {selectedExerciseDetails.oneRmAlex} kg
-                    </Text>
-                  </>
+                  </Box>
                 )}
               </VStack>
             )}
@@ -1925,7 +2305,21 @@ function DailyWorkoutLog({
                 <Button
                   colorScheme="teal"
                   mr={3}
-                  onClick={() => setIsEditMode(true)}
+                  onClick={() => {
+                    setIsEditMode(true);
+                    setEditingExercise({
+                      ...selectedExerciseDetails,
+                      exercise: selectedExerciseDetails.exercise,
+                      targetMuscleGroup:
+                        selectedExerciseDetails.targetMuscleGroup || "",
+                      videoDemonstration:
+                        selectedExerciseDetails.videoDemonstration || "",
+                      inDepthExplanation:
+                        selectedExerciseDetails.inDepthExplanation || "",
+                      favorite: selectedExerciseDetails.favorite || "",
+                      oneRmAlex: selectedExerciseDetails.oneRmAlex || "N/A",
+                    });
+                  }}
                 >
                   Edit Details
                 </Button>
