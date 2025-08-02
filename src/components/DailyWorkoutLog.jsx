@@ -475,54 +475,73 @@ function DailyWorkoutLog({
   };
 
   // Save edited exercise details
- const saveEditedDetails = async () => {
-  if (!selectedExerciseDetails) return;
-
-  try {
-    setSaving(true);
-    setError(null);
-
-    // Prepare the update data
-    const updateData = {
-      Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
-      Video_Demonstration: selectedExerciseDetails.videoDemonstration,
-      "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
-      Favorite: selectedExerciseDetails.favorite,
-      "1_RM_Alex": selectedExerciseDetails.oneRmAlex
-    };
-
-    // Update the Exercise Library table
-    const { error: updateError } = await supabase
-      .from("Exercise Library")
-      .update(updateData)
-      .eq("Exercise", selectedExerciseDetails.exercise);
-
-    if (updateError) throw updateError;
-
-    // Update local state to reflect changes
-    setExerciseLibrary(prevLibrary => 
-      prevLibrary.map(ex => 
-        ex.Exercise === selectedExerciseDetails.exercise 
-          ? { ...ex, ...updateData }
-          : ex
-      )
-    );
-
-    setSuccessMessage("Exercise details updated successfully!");
-    setIsDetailsModalOpen(false);
-    setSelectedExerciseDetails(null);
-    setIsEditMode(false);
-
-    // Clear success message after 3 seconds
-    setTimeout(() => setSuccessMessage(null), 3000);
-
-  } catch (err) {
-    console.error("Error updating exercise details:", err);
-    setError(err.message || "Failed to update exercise details");
-  } finally {
-    setSaving(false);
-  }
-};
+       const saveEditedDetails = async () => {
+        if (!selectedExerciseDetails) return;
+      
+        try {
+          setSaving(true);
+          setError(null);
+      
+          // Add debugging
+          console.log("Attempting to update exercise:", selectedExerciseDetails.exercise);
+          console.log("Update data:", {
+            Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
+            Video_Demonstration: selectedExerciseDetails.videoDemonstration,
+            "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
+            Favorite: selectedExerciseDetails.favorite,
+            "1_RM_Alex": selectedExerciseDetails.oneRmAlex
+          });
+      
+          // Prepare the update data
+          const updateData = {
+            Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
+            Video_Demonstration: selectedExerciseDetails.videoDemonstration,
+            "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
+            Favorite: selectedExerciseDetails.favorite,
+            "1_RM_Alex": selectedExerciseDetails.oneRmAlex
+          };
+      
+          // Update the Exercise Library table
+          const { data, error: updateError } = await supabase
+            .from("Exercise Library")
+            .update(updateData)
+            .eq("Exercise", selectedExerciseDetails.exercise)
+            .select(); // Add .select() to return the updated data
+      
+          console.log("Supabase response data:", data);
+          console.log("Supabase response error:", updateError);
+      
+          if (updateError) throw updateError;
+      
+          // Check if any rows were actually updated
+          if (!data || data.length === 0) {
+            throw new Error(`No exercise found with name: "${selectedExerciseDetails.exercise}"`);
+          }
+      
+          // Update local state to reflect changes
+          setExerciseLibrary(prevLibrary => 
+            prevLibrary.map(ex => 
+              ex.Exercise === selectedExerciseDetails.exercise 
+                ? { ...ex, ...updateData }
+                : ex
+            )
+          );
+      
+          setSuccessMessage(`Exercise details updated successfully! Updated ${data.length} record(s).`);
+          setIsDetailsModalOpen(false);
+          setSelectedExerciseDetails(null);
+          setIsEditMode(false);
+      
+          // Clear success message after 3 seconds
+          setTimeout(() => setSuccessMessage(null), 3000);
+      
+        } catch (err) {
+          console.error("Error updating exercise details:", err);
+          setError(err.message || "Failed to update exercise details");
+        } finally {
+          setSaving(false);
+        }
+      };
 
   // Handle edit field changes in modal
   const handleEditFieldChange = (field, value) => {
@@ -1676,5 +1695,6 @@ function DailyWorkoutLog({
 }
 
 export default DailyWorkoutLog;
+
 
 
