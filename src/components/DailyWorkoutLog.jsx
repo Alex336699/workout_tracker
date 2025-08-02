@@ -474,78 +474,107 @@ function DailyWorkoutLog({
     setSearchTerm(""); // Reset search term for a fresh search
   };
 
-  // Save edited exercise details
-       const saveEditedDetails = async () => {
-        if (!selectedExerciseDetails) return;
+  // Save edited exercise details to Supabase
+  const saveEditedDetails = async () => {
+    if (!selectedExerciseDetails) return;
+
+    try {
+      setSaving(true);
+      setError(null);
+
+      // Check authentication first
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        setError("You must be logged in to update exercise details");
+        return;
+      }
+
+      console.log("=== DEBUGGING SUPABASE UPDATE ===");
+      console.log("Exercise name:", selectedExerciseDetails.exercise);
       
-        try {
-          setSaving(true);
-          setError(null);
+      // First, let's try to find the exact record
+      const { data: findData, error: findError } = await supabase
+        .from("Exercise Library")
+        .select("*")
+        .eq("Exercise", selectedExerciseDetails.exercise);
       
-          // Add debugging
-          console.log("Attempting to update exercise:", selectedExerciseDetails.exercise);
-          console.log("Update data:", {
-            Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
-            Video_Demonstration: selectedExerciseDetails.videoDemonstration,
-            "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
-            Favorite: selectedExerciseDetails.favorite,
-            "1_RM_Alex": selectedExerciseDetails.oneRmAlex
-          });
+      console.log("Found records:", findData);
+      console.log("Find error:", findError);
       
-          // Prepare the update data
-          const updateData = {
-            Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
-            Video_Demonstration: selectedExerciseDetails.videoDemonstration,
-            "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
-            Favorite: selectedExerciseDetails.favorite,
-            "1_RM_Alex": selectedExerciseDetails.oneRmAlex
-          };
-      
-          // Update the Exercise Library table
-          const { data, error: updateError } = await supabase
-            .from("Exercise Library")
-            .update(updateData)
-            .eq("Exercise", selectedExerciseDetails.exercise)
-            .select(); // Add .select() to return the updated data
-      
-          console.log("Supabase response data:", data);
-          console.log("Supabase response error:", updateError);
-      
-          if (updateError) throw updateError;
-      
-          // Check if any rows were actually updated
-          if (!data || data.length === 0) {
-            throw new Error(`No exercise found with name: "${selectedExerciseDetails.exercise}"`);
-          }
-      
-          // Update local state to reflect changes
-          setExerciseLibrary(prevLibrary => 
-            prevLibrary.map(ex => 
-              ex.Exercise === selectedExerciseDetails.exercise 
-                ? { ...ex, ...updateData }
-                : ex
-            )
-          );
-      
-          setSuccessMessage(`Exercise details updated successfully! Updated ${data.length} record(s).`);
-          setIsDetailsModalOpen(false);
-          setSelectedExerciseDetails(null);
-          setIsEditMode(false);
-      
-          // Clear success message after 3 seconds
-          setTimeout(() => setSuccessMessage(null), 3000);
-      
-        } catch (err) {
-          console.error("Error updating exercise details:", err);
-          setError(err.message || "Failed to update exercise details");
-        } finally {
-          setSaving(false);
-        }
+      if (findError) throw findError;
+      if (!findData || findData.length === 0) {
+        throw new Error(`Exercise "${selectedExerciseDetails.exercise}" not found in database`);
+      }
+
+      // Prepare the update data
+      const updateData = {
+        Target_Muscle_Group: selectedExerciseDetails.targetMuscleGroup,
+        Video_Demonstration: selectedExerciseDetails.videoDemonstration,
+        "In-Depth_Explanation": selectedExerciseDetails.inDepthExplanation,
+        Favorite: selectedExerciseDetails.favorite,
+        "1_RM_Alex": selectedExerciseDetails.oneRmAlex
       };
 
-  // Handle edit field changes in modal
+      console.log("Update data:", updateData);
+
+      // Update the Exercise Library table
+      const { data: updateResult, error: updateError } = await supabase
+        .from("Exercise Library")
+        .update(updateData)
+        .eq("Exercise", selectedExerciseDetails.exercise)
+        .select();
+
+      console.log("Update result:", updateResult);
+      console.log("Update error:", updateError);
+
+      if (updateError) throw updateError;
+
+      // Check if any rows were actually updated
+      if (!updateResult || updateResult.length === 0) {
+        throw new Error(`No exercise found with name: "${selectedExerciseDetails.exercise}"`);
+      }
+
+      // Update local state to reflect changes
+      setExerciseLibrary(prevLibrary => 
+        prevLibrary.map(ex => 
+          ex.Exercise === selectedExerciseDetails.exercise 
+            ? { ...ex, ...updateData }
+            : ex
+        )
+      );
+
+      setSuccessMessage(`Exercise details updated successfully! Updated ${updateResult.length} record(s).`);
+      setIsDetailsModalOpen(false);
+      setSelectedExerciseDetails(null);
+      setIsEditMode(false);
+
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(null), 3000);
+
+    } catch (err) {
+      console.error("Error updating exercise details:", err);
+      setError(err.message || "Failed to update exercise details");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Handle edit field changes in modal with enhanced validation
   const handleEditFieldChange = (field, value) => {
-    setSelectedExerciseDetails((prev) => ({ ...prev, [field]: value }));
+    console.log(`Changing ${field} to:`, value, typeof value);
+    
+    // Special handling for 1RM field to prevent number input issues
+    if (field === "oneRmAlex") {
+      console.log("1RM value being set:", value);
+      // Allow empty, "N/A", or valid numbers
+      if (value === "" || value === "N/A" || value.toLowerCase() === "n/a" || !isNaN(parseFloat(value))) {
+        setSelectedExerciseDetails(prev => ({ ...prev, [field]: value }));
+      }
+      return;
+    }
+    
+    // Handle all other fields normally
+    setSelectedExerciseDetails(prev => ({ ...prev, [field]: value }));
   };
 
   // Smart search across multiple columns
@@ -975,726 +1004,3 @@ function DailyWorkoutLog({
                           aria-label="Delete Set"
                         />
                       )}
-                    </Flex>
-                    <Flex direction="column" gap={2}>
-                      <FormControl>
-                        <FormLabel fontSize="xs">Weight (kg)</FormLabel>
-                        <Input
-                          type="number"
-                          value={set.weight}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "weight",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          bg={
-                            getPerformanceStatus(
-                              log.exercise,
-                              set.weight,
-                              set.reps
-                            ).color
-                          }
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs">Reps</FormLabel>
-                        <Input
-                          type="number"
-                          value={set.reps}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "reps",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          bg={
-                            getPerformanceStatus(
-                              log.exercise,
-                              set.weight,
-                              set.reps
-                            ).color
-                          }
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs">RPE (1-10)</FormLabel>
-                        <Input
-                          type="number"
-                          value={set.rpe}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "rpe",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          bg="gray.50"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <Flex align="center">
-                          <Checkbox
-                            isChecked={set.completed}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "completed",
-                                e.target.checked
-                              )
-                            }
-                            size="md"
-                            mr={2}
-                          />
-                          <FormLabel fontSize="xs" mb={0}>
-                            Done
-                          </FormLabel>
-                        </Flex>
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs">Notes</FormLabel>
-                        <Textarea
-                          value={set.notes}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "notes",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          rows={2}
-                        />
-                      </FormControl>
-                      <Text
-                        fontSize="xs"
-                        color={
-                          getPerformanceStatus(
-                            log.exercise,
-                            set.weight,
-                            set.reps
-                          ).color !== "gray.50"
-                            ? getPerformanceStatus(
-                                log.exercise,
-                                set.weight,
-                                set.reps
-                              ).color.replace(".100", ".700")
-                            : "gray.500"
-                        }
-                      >
-                        {
-                          getPerformanceStatus(
-                            log.exercise,
-                            set.weight,
-                            set.reps
-                          ).message
-                        }
-                      </Text>
-                    </Flex>
-                  </Box>
-                ))}
-              </VStack>
-            ) : (
-              <Table variant="simple" size="sm" mb={2}>
-                <Tbody>
-                  {log.sets.map((set, setIndex) => {
-                    const status = getPerformanceStatus(
-                      log.exercise,
-                      set.weight,
-                      set.reps
-                    );
-                    return (
-                      <Tr key={setIndex}>
-                        <Td width="10%">
-                          <Flex align="center">
-                            Set {setIndex + 1}
-                            {log.sets.length > 1 && (
-                              <IconButton
-                                icon={<DeleteIcon />}
-                                colorScheme="red"
-                                size="xs"
-                                ml={2}
-                                onClick={() =>
-                                  deleteSet(exerciseIndex, setIndex)
-                                }
-                                aria-label="Delete Set"
-                              />
-                            )}
-                          </Flex>
-                        </Td>
-                        <Td width="20%">
-                          <Input
-                            placeholder="Weight (kg)"
-                            type="number"
-                            value={set.weight}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "weight",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg={status.color}
-                          />
-                        </Td>
-                        <Td width="20%">
-                          <Input
-                            placeholder="Reps"
-                            type="number"
-                            value={set.reps}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "reps",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg={status.color}
-                          />
-                        </Td>
-                        <Td width="15%">
-                          <Input
-                            placeholder="RPE (1-10)"
-                            type="number"
-                            value={set.rpe}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "rpe",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg="gray.50"
-                          />
-                        </Td>
-                        <Td width="10%">
-                          <Checkbox
-                            isChecked={set.completed}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "completed",
-                                e.target.checked
-                              )
-                            }
-                            size="md"
-                          >
-                            Done
-                          </Checkbox>
-                        </Td>
-                        <Td width="25%">
-                          <Textarea
-                            placeholder="Notes"
-                            value={set.notes}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "notes",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            rows={1}
-                          />
-                        </Td>
-                        <Td width="10%">
-                          <Text
-                            fontSize="xs"
-                            color={
-                              status.color !== "gray.50"
-                                ? status.color.replace(".100", ".700")
-                                : "gray.500"
-                            }
-                          >
-                            {status.message}
-                          </Text>
-                        </Td>
-                      </Tr>
-                    );
-                  })}
-                </Tbody>
-              </Table>
-            )}
-            <Button
-              colorScheme="gray"
-              size="sm"
-              onClick={() => addSet(exerciseIndex)}
-              mb={2}
-            >
-              Add Set
-            </Button>
-          </Box>
-        ))
-      ) : (
-        <Text mt={4} mb={4} color="gray.500">
-          No exercises added yet. Add an exercise to start logging.
-        </Text>
-      )}
-      <Box mt={4}>
-        <Button
-          colorScheme="blue"
-          size="md"
-          onClick={() => {
-            setShowSearch(!showSearch);
-            setShowChangeSearchModal(false); // Close modal if open
-            setIsChangeMode(false); // Reset change mode
-          }}
-          mb={2}
-        >
-          {showSearch ? "Cancel" : "Add New Exercise"}
-        </Button>
-        {showSearch && (
-          <Box
-            mt={2}
-            p={{ base: 2, md: 3 }}
-            bg="white"
-            borderRadius="md"
-            boxShadow="md"
-          >
-            <Heading size="sm" mb={2}>
-              Add Exercise
-            </Heading>
-            <Input
-              placeholder="Search exercises by name, muscle group, equipment..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              size="md"
-              mb={2}
-              width={{ base: "full", md: "400px" }}
-            />
-            {searchTerm && (
-              <Box
-                maxH="300px"
-                overflowY="auto"
-                bg="white"
-                borderRadius="md"
-                boxShadow="md"
-                p={2}
-                mt={-2}
-              >
-                <List spacing={1}>
-                  {filteredExercises.length === 0 && (
-                    <ListItem>
-                      <Text fontSize="sm" color="gray.500">
-                        No matching exercises found.
-                      </Text>
-                    </ListItem>
-                  )}
-                  {filteredExercises.map((ex) => (
-                    <ListItem
-                      key={ex.Exercise}
-                      p={2}
-                      borderRadius="sm"
-                      _hover={{ bg: "gray.100", cursor: "pointer" }}
-                      onClick={() => {
-                        if (isChangeMode) {
-                          replaceExercise(editExerciseIndex, ex.Exercise);
-                        } else {
-                          addExerciseToLog(ex.Exercise);
-                        }
-                      }}
-                      borderBottom="1px solid"
-                      borderColor="gray.200"
-                    >
-                      <Text fontWeight="bold" fontSize="md">
-                        {ex.Exercise}
-                      </Text>
-                      <Text fontSize="sm" color="gray.600">
-                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
-                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
-                        {ex.Mechanics || "N/A"}
-                      </Text>
-                      <Flex gap={2} mt={1}>
-                        {ex.Video_Demonstration && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex.Video_Demonstration}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Video Demo
-                          </Text>
-                        )}
-                        {ex["In-Depth_Explanation"] && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex["In-Depth_Explanation"]}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Explanation
-                          </Text>
-                        )}
-                      </Flex>
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            )}
-            <Select
-              placeholder="Or select from list"
-              size="sm"
-              mt={2}
-              width={{ base: "full", md: "400px" }}
-              onChange={(e) => {
-                if (e.target.value) {
-                  if (isChangeMode) {
-                    replaceExercise(editExerciseIndex, e.target.value);
-                  } else {
-                    addExerciseToLog(e.target.value);
-                  }
-                }
-              }}
-            >
-              {exerciseLibrary.map((ex) => (
-                <option key={ex.Exercise} value={ex.Exercise}>
-                  {ex.Exercise}
-                </option>
-              ))}
-            </Select>
-          </Box>
-        )}
-      </Box>
-      <Flex justify="center" mt={4}>
-        <Button
-          colorScheme="teal"
-          size="lg"
-          onClick={saveLogs}
-          isLoading={saving}
-          w={{ base: "full", md: "auto" }}
-          isDisabled={logs.length === 0}
-        >
-          Save Workout Log
-        </Button>
-      </Flex>
-
-      {/* Details Modal for Exercise */}
-      <Modal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        size={{ base: "full", md: "lg" }}
-      >
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>
-            {selectedExerciseDetails?.exercise || "Exercise Details"}
-          </ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-  {/* Add error and success message alerts */}
-  {error && (
-    <Alert status="error" mb={4}>
-      <AlertIcon />
-      {error}
-    </Alert>
-  )}
-  {successMessage && (
-    <Alert status="success" mb={4}>
-      <AlertIcon />
-      {successMessage}
-    </Alert>
-  )}
-  
-  {/* Your existing modal content */}
-  {selectedExerciseDetails && (
-    <VStack spacing={3} align="stretch">
-      <Text fontWeight="bold">
-        Exercise: {selectedExerciseDetails.exercise}
-      </Text>
-      {isEditMode ? (
-        <>
-          <FormControl>
-            <FormLabel>Target Muscle Group</FormLabel>
-            <Input
-              value={selectedExerciseDetails.targetMuscleGroup}
-              onChange={(e) =>
-                handleEditFieldChange(
-                  "targetMuscleGroup",
-                  e.target.value
-                )
-              }
-            />
-          </FormControl>
-          <FormControl>
-            <FormLabel>Video Demonstration Link</FormLabel>
-            <Input
-              value={selectedExerciseDetails.videoDemonstration}
-              onChange={(e) =>
-                handleEditFieldChange(
-                  "videoDemonstration",
-                  e.target.value
-                )
-              }
-            />
-          </FormControl>
-          <FormControl>
-            <FormLabel>In-Depth Explanation Link</FormLabel>
-            <Input
-              value={selectedExerciseDetails.inDepthExplanation}
-              onChange={(e) =>
-                handleEditFieldChange(
-                  "inDepthExplanation",
-                  e.target.value
-                )
-              }
-            />
-          </FormControl>
-          <FormControl>
-            <FormLabel>Favorite</FormLabel>
-            <Select
-              value={selectedExerciseDetails.favorite || ""}
-              onChange={(e) =>
-                handleEditFieldChange("favorite", e.target.value)
-              }
-            >
-              <option value="">None</option>
-              <option value="Yes">Yes</option>
-              <option value="No">No</option>
-            </Select>
-          </FormControl>
-          <FormControl>
-            <FormLabel>1 RM Alex (kg)</FormLabel>
-            <Input
-              type="text"  {/* Changed from "number" to "text" */}
-              value={selectedExerciseDetails.oneRmAlex || ""}
-              onChange={(e) =>
-                handleEditFieldChange("oneRmAlex", e.target.value)
-              }
-              placeholder="Enter weight in kg or N/A"
-            />
-          </FormControl>
-        </>
-      ) : (
-        <>
-          <Text>
-            Target Muscle Group:{" "}
-            {selectedExerciseDetails.targetMuscleGroup}
-          </Text>
-          {selectedExerciseDetails.videoDemonstration ? (
-            <Text>
-              Video Demonstration:{" "}
-              <Text
-                as="a"
-                color="blue.500"
-                href={selectedExerciseDetails.videoDemonstration}
-                target="_blank"
-                rel="noopener noreferrer"
-                _hover={{ textDecoration: "underline" }}
-              >
-                Watch Video
-              </Text>
-            </Text>
-          ) : (
-            <Text>Video Demonstration: N/A</Text>
-          )}
-          {selectedExerciseDetails.inDepthExplanation ? (
-            <Text>
-              In-Depth Explanation:{" "}
-              <Text
-                as="a"
-                color="blue.500"
-                href={selectedExerciseDetails.inDepthExplanation}
-                target="_blank"
-                rel="noopener noreferrer"
-                _hover={{ textDecoration: "underline" }}
-              >
-                Read More
-              </Text>
-            </Text>
-          ) : (
-            <Text>In-Depth Explanation: N/A</Text>
-          )}
-          <Text>
-            Favorite: {selectedExerciseDetails.favorite || "N/A"}
-          </Text>
-          <Text>
-            1 RM Alex: {selectedExerciseDetails.oneRmAlex} kg
-          </Text>
-        </>
-      )}
-    </VStack>
-  )}
-</ModalBody>
-          <ModalFooter>
-            {!isEditMode && !isChangeMode && (
-              <>
-                <Button
-                  colorScheme="teal"
-                  mr={3}
-                  onClick={() => setIsEditMode(true)}
-                >
-                  Edit Details
-                </Button>
-              </>
-            )}
-            {isEditMode && (
-              <Button colorScheme="teal" mr={3} onClick={saveEditedDetails}>
-                Save Changes
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => setIsDetailsModalOpen(false)}
-            >
-              Close
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-
-      {/* Change Exercise Search Modal */}
-      <Modal
-        isOpen={showChangeSearchModal}
-        onClose={() => {
-          setShowChangeSearchModal(false);
-          setIsChangeMode(false);
-        }}
-        size={{ base: "full", md: "lg" }}
-      >
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Change Exercise</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <Input
-              placeholder="Search exercises by name, muscle group, equipment..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              size="md"
-              mb={2}
-              width="full"
-            />
-            {searchTerm && (
-              <Box
-                maxH="300px"
-                overflowY="auto"
-                bg="white"
-                borderRadius="md"
-                boxShadow="md"
-                p={2}
-                mt={-2}
-              >
-                <List spacing={1}>
-                  {filteredExercises.length === 0 && (
-                    <ListItem>
-                      <Text fontSize="sm" color="gray.500">
-                        No matching exercises found.
-                      </Text>
-                    </ListItem>
-                  )}
-                  {filteredExercises.map((ex) => (
-                    <ListItem
-                      key={ex.Exercise}
-                      p={2}
-                      borderRadius="sm"
-                      _hover={{ bg: "gray.100", cursor: "pointer" }}
-                      onClick={() => {
-                        replaceExercise(editExerciseIndex, ex.Exercise);
-                      }}
-                      borderBottom="1px solid"
-                      borderColor="gray.200"
-                    >
-                      <Text fontWeight="bold" fontSize="md">
-                        {ex.Exercise}
-                      </Text>
-                      <Text fontSize="sm" color="gray.600">
-                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
-                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
-                        {ex.Mechanics || "N/A"}
-                      </Text>
-                      <Flex gap={2} mt={1}>
-                        {ex.Video_Demonstration && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex.Video_Demonstration}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Video Demo
-                          </Text>
-                        )}
-                        {ex["In-Depth_Explanation"] && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex["In-Depth_Explanation"]}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Explanation
-                          </Text>
-                        )}
-                      </Flex>
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            )}
-            <Select
-              placeholder="Or select from list"
-              size="sm"
-              mt={2}
-              width="full"
-              onChange={(e) => {
-                if (e.target.value) {
-                  replaceExercise(editExerciseIndex, e.target.value);
-                }
-              }}
-            >
-              {exerciseLibrary.map((ex) => (
-                <option key={ex.Exercise} value={ex.Exercise}>
-                  {ex.Exercise}
-                </option>
-              ))}
-            </Select>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setShowChangeSearchModal(false);
-                setIsChangeMode(false);
-              }}
-            >
-              Close
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </Box>
-  );
-}
-
-export default DailyWorkoutLog;
-
-
-
