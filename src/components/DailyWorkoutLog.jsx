@@ -1386,124 +1386,140 @@ function DailyWorkoutLog({
           </ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            {selectedExerciseDetails && (
-              <VStack spacing={3} align="stretch">
-                <Text fontWeight="bold">
-                  Exercise: {selectedExerciseDetails.exercise}
-                </Text>
-                {isEditMode ? (
-                  <>
-                    <FormControl>
-                      <FormLabel>Target Muscle Group</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.targetMuscleGroup}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "targetMuscleGroup",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Video Demonstration Link</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.videoDemonstration}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "videoDemonstration",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>In-Depth Explanation Link</FormLabel>
-                      <Input
-                        value={selectedExerciseDetails.inDepthExplanation}
-                        onChange={(e) =>
-                          handleEditFieldChange(
-                            "inDepthExplanation",
-                            e.target.value
-                          )
-                        }
-                      />
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>Favorite</FormLabel>
-                      <Select
-                        value={selectedExerciseDetails.favorite || ""}
-                        onChange={(e) =>
-                          handleEditFieldChange("favorite", e.target.value)
-                        }
-                      >
-                        <option value="">None</option>
-                        <option value="Yes">Yes</option>
-                        <option value="No">No</option>
-                      </Select>
-                    </FormControl>
-                    <FormControl>
-                      <FormLabel>1 RM Alex (kg)</FormLabel>
-                      <Input
-                        type="number"
-                        value={selectedExerciseDetails.oneRmAlex}
-                        onChange={(e) =>
-                          handleEditFieldChange("oneRmAlex", e.target.value)
-                        }
-                      />
-                    </FormControl>
-                  </>
-                ) : (
-                  <>
-                    <Text>
-                      Target Muscle Group:{" "}
-                      {selectedExerciseDetails.targetMuscleGroup}
-                    </Text>
-                    {selectedExerciseDetails.videoDemonstration ? (
-                      <Text>
-                        Video Demonstration:{" "}
-                        <Text
-                          as="a"
-                          color="blue.500"
-                          href={selectedExerciseDetails.videoDemonstration}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          _hover={{ textDecoration: "underline" }}
-                        >
-                          Watch Video
-                        </Text>
-                      </Text>
-                    ) : (
-                      <Text>Video Demonstration: N/A</Text>
-                    )}
-                    {selectedExerciseDetails.inDepthExplanation ? (
-                      <Text>
-                        In-Depth Explanation:{" "}
-                        <Text
-                          as="a"
-                          color="blue.500"
-                          href={selectedExerciseDetails.inDepthExplanation}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          _hover={{ textDecoration: "underline" }}
-                        >
-                          Read More
-                        </Text>
-                      </Text>
-                    ) : (
-                      <Text>In-Depth Explanation: N/A</Text>
-                    )}
-                    <Text>
-                      Favorite: {selectedExerciseDetails.favorite || "N/A"}
-                    </Text>
-                    <Text>
-                      1 RM Alex: {selectedExerciseDetails.oneRmAlex} kg
-                    </Text>
-                  </>
-                )}
-              </VStack>
-            )}
-          </ModalBody>
+  {/* Add error and success message alerts */}
+  {error && (
+    <Alert status="error" mb={4}>
+      <AlertIcon />
+      {error}
+    </Alert>
+  )}
+  {successMessage && (
+    <Alert status="success" mb={4}>
+      <AlertIcon />
+      {successMessage}
+    </Alert>
+  )}
+  
+  {/* Your existing modal content */}
+  {selectedExerciseDetails && (
+    <VStack spacing={3} align="stretch">
+      <Text fontWeight="bold">
+        Exercise: {selectedExerciseDetails.exercise}
+      </Text>
+      {isEditMode ? (
+        <>
+          <FormControl>
+            <FormLabel>Target Muscle Group</FormLabel>
+            <Input
+              value={selectedExerciseDetails.targetMuscleGroup}
+              onChange={(e) =>
+                handleEditFieldChange(
+                  "targetMuscleGroup",
+                  e.target.value
+                )
+              }
+            />
+          </FormControl>
+          <FormControl>
+            <FormLabel>Video Demonstration Link</FormLabel>
+            <Input
+              value={selectedExerciseDetails.videoDemonstration}
+              onChange={(e) =>
+                handleEditFieldChange(
+                  "videoDemonstration",
+                  e.target.value
+                )
+              }
+            />
+          </FormControl>
+          <FormControl>
+            <FormLabel>In-Depth Explanation Link</FormLabel>
+            <Input
+              value={selectedExerciseDetails.inDepthExplanation}
+              onChange={(e) =>
+                handleEditFieldChange(
+                  "inDepthExplanation",
+                  e.target.value
+                )
+              }
+            />
+          </FormControl>
+          <FormControl>
+            <FormLabel>Favorite</FormLabel>
+            <Select
+              value={selectedExerciseDetails.favorite || ""}
+              onChange={(e) =>
+                handleEditFieldChange("favorite", e.target.value)
+              }
+            >
+              <option value="">None</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </Select>
+          </FormControl>
+          <FormControl>
+            <FormLabel>1 RM Alex (kg)</FormLabel>
+            <Input
+              type="text"  {/* Changed from "number" to "text" */}
+              value={selectedExerciseDetails.oneRmAlex || ""}
+              onChange={(e) =>
+                handleEditFieldChange("oneRmAlex", e.target.value)
+              }
+              placeholder="Enter weight in kg or N/A"
+            />
+          </FormControl>
+        </>
+      ) : (
+        <>
+          <Text>
+            Target Muscle Group:{" "}
+            {selectedExerciseDetails.targetMuscleGroup}
+          </Text>
+          {selectedExerciseDetails.videoDemonstration ? (
+            <Text>
+              Video Demonstration:{" "}
+              <Text
+                as="a"
+                color="blue.500"
+                href={selectedExerciseDetails.videoDemonstration}
+                target="_blank"
+                rel="noopener noreferrer"
+                _hover={{ textDecoration: "underline" }}
+              >
+                Watch Video
+              </Text>
+            </Text>
+          ) : (
+            <Text>Video Demonstration: N/A</Text>
+          )}
+          {selectedExerciseDetails.inDepthExplanation ? (
+            <Text>
+              In-Depth Explanation:{" "}
+              <Text
+                as="a"
+                color="blue.500"
+                href={selectedExerciseDetails.inDepthExplanation}
+                target="_blank"
+                rel="noopener noreferrer"
+                _hover={{ textDecoration: "underline" }}
+              >
+                Read More
+              </Text>
+            </Text>
+          ) : (
+            <Text>In-Depth Explanation: N/A</Text>
+          )}
+          <Text>
+            Favorite: {selectedExerciseDetails.favorite || "N/A"}
+          </Text>
+          <Text>
+            1 RM Alex: {selectedExerciseDetails.oneRmAlex} kg
+          </Text>
+        </>
+      )}
+    </VStack>
+  )}
+</ModalBody>
           <ModalFooter>
             {!isEditMode && !isChangeMode && (
               <>
@@ -1660,4 +1676,5 @@ function DailyWorkoutLog({
 }
 
 export default DailyWorkoutLog;
+
 
