@@ -9,13 +9,25 @@ import {
   Spinner,
   Alert,
   AlertIcon,
-  Link,
-  IconButton,
-  Input,
+  CloseButton,
+  VStack,
+  HStack,
+  Badge,
   Select,
-  Textarea,
-  FormControl,
-  FormLabel,
+  IconButton,
+  Divider,
+  Accordion,
+  AccordionItem,
+  AccordionButton,
+  AccordionPanel,
+  AccordionIcon,
+  Table,
+  Thead,
+  Tbody,
+  Tr,
+  Th,
+  Td,
+  useBreakpointValue,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -23,33 +35,150 @@ import {
   ModalFooter,
   ModalBody,
   ModalCloseButton,
-  Table,
-  Tbody,
-  Tr,
-  Td,
-  Icon,
+  useDisclosure,
+  Input,
+  FormControl,
+  FormLabel,
+  Textarea,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
+  Card,
+  CardHeader,
+  CardBody,
+  SimpleGrid,
+  Stepper,
+  Step,
+  StepIndicator,
+  StepStatus,
+  StepIcon,
+  StepNumber,
+  StepTitle,
+  StepDescription,
+  StepSeparator,
+  useSteps,
+  Switch,
+  RadioGroup,
+  Radio,
+  Stack,
+  Popover,
+  PopoverTrigger,
+  PopoverContent,
+  PopoverHeader,
+  PopoverBody,
+  PopoverArrow,
+  PopoverCloseButton,
+  Image,
+  Link,
+  Tag,
+  TagLabel,
+  Wrap,
+  WrapItem,
 } from "@chakra-ui/react";
 import {
   ArrowBackIcon,
-  AddIcon,
-  CopyIcon,
-  DeleteIcon,
   EditIcon,
+  DeleteIcon,
+  AddIcon,
+  InfoIcon,
+  CalendarIcon,
+  StarIcon,
   CheckIcon,
+  DownloadIcon,
 } from "@chakra-ui/icons";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
 
+// Constants for workout focus options
+const WORKOUT_FOCUS_OPTIONS = [
+  { value: "strength", label: "Strength" },
+  { value: "hypertrophy", label: "Hypertrophy" },
+  { value: "power", label: "Power" },
+  { value: "endurance", label: "Endurance" },
+  { value: "general", label: "General Fitness" },
+  { value: "cardio", label: "Cardio" },
+  { value: "mobility", label: "Mobility" },
+];
+
+const PROGRESSION_TYPES = [
+  {
+    value: "linear",
+    label: "Linear Progression",
+    description: "Add weight consistently each week",
+  },
+  {
+    value: "double",
+    label: "Double Progression",
+    description: "Increase reps first, then weight",
+  },
+  {
+    value: "percentage",
+    label: "Percentage-based",
+    description: "Based on % of 1RM",
+  },
+  {
+    value: "block",
+    label: "Block Periodization",
+    description: "Focused training blocks",
+  },
+  { value: "wave", label: "Wave Loading", description: "Undulating intensity" },
+];
+
+const TRAINING_STRUCTURES = [
+  {
+    value: "push_pull_legs",
+    label: "Push/Pull/Legs",
+    description: "3-day split focusing on movement patterns",
+  },
+  {
+    value: "upper_lower",
+    label: "Upper/Lower",
+    description: "2-day split alternating upper and lower body",
+  },
+  {
+    value: "full_body",
+    label: "Full Body",
+    description: "Train all muscle groups each session",
+  },
+  {
+    value: "body_part",
+    label: "Body Part Split",
+    description: "Traditional bodybuilding split",
+  },
+  {
+    value: "custom",
+    label: "Custom Structure",
+    description: "Define your own training structure",
+  },
+];
+
 function WorkoutPrograms() {
-  const [programsOverview, setProgramsOverview] = useState([]);
-  const [programsLibrary, setProgramsLibrary] = useState([]);
+  // Main state
+  const [programs, setPrograms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [selectedProgram, setSelectedProgram] = useState(null);
-  const [showAddProgramModal, setShowAddProgramModal] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [enrollmentStatus, setEnrollmentStatus] = useState(null);
-  const [newProgram, setNewProgram] = useState({
+  const [expandedProgram, setExpandedProgram] = useState(null);
+
+  // Program creation state - 6-step wizard
+  const [programCreationStep, setProgramCreationStep] = useState(0);
+  const [isCreatingProgram, setIsCreatingProgram] = useState(false);
+  const [editingProgram, setEditingProgram] = useState(null);
+
+  // Step 1: Program Goals & Overview
+  const [programOverview, setProgramOverview] = useState({
     Program_Name: "",
     Program_Description: "",
     Level: "",
@@ -63,127 +192,3004 @@ function WorkoutPrograms() {
     Program_Macro_Cycle: "",
     Weeks: "",
     Prefered_Season: "",
-    Program_Length_in_Weeks: "",
+    Program_Length_in_Weeks: null,
     Days_Per_Week: "",
     Time_Per_Workout: "",
     Equipment: "",
     MUSCLE_ENGAGEMENT: "",
     Deload_Week: "",
     Progression: "",
+    user_id: null,
   });
-  const [weeklyPlan, setWeeklyPlan] = useState([]);
-  const [newDay, setNewDay] = useState({
+
+  // Step 2: Training Structure
+  const [trainingStructure, setTrainingStructure] = useState({
+    type: "",
+    daysPerWeek: 3,
+    sessionsPerDay: 1,
+    customStructure: {},
+  });
+
+  // Step 3: Progression Rules
+  const [progressionRules, setProgressionRules] = useState({
+    type: "linear",
+    weightProgression: 2.5, // kg per week for linear
+    repProgression: 1, // reps per week for double progression
+    percentageIncrease: 2.5, // % increase per week
+    deloadFrequency: 4, // every 4th week
+    deloadPercentage: 80, // 80% of previous week
+    blockLength: 4, // weeks per block
+    wavePattern: [75, 80, 85, 90], // % 1RM pattern
+    autoGenerate: true,
+  });
+
+  // Step 4: Week 1 Template
+  const [weekOneTemplate, setWeekOneTemplate] = useState({});
+
+  // Step 5: Generated Program
+  const [generatedProgram, setGeneratedProgram] = useState({});
+
+  // Step 6: Fine-tuning
+  const [fineTuning, setFineTuning] = useState({
+    modifiedWeeks: {},
+    customExercises: {},
+  });
+
+  // Exercise management
+  const [exercises, setExercises] = useState([]);
+  const [newExercise, setNewExercise] = useState({
+    program_name: "",
+    program_macro_cycle: "",
     week: 1,
     day: 1,
     focus: "",
     exercise: "",
-    target_sets: "",
-    target_reps: "",
-    load_prescription_p1RM: "",
-    target_rpe: "",
-    target_rest: "",
+    exercise_program_note: "",
+    superset: "",
+    target_sets: 3,
+    target_reps: 10,
+    target_rpe: 7,
+    target_rest: 60,
     target_tempo: "",
     target_time_distance: "",
+    program_id: "",
+    target_weight_kg: null,
+    load_prescription_p1RM: null,
+    user_id: null,
   });
-  const [editingDayIndex, setEditingDayIndex] = useState(null);
-  const [progressionLogic, setProgressionLogic] = useState({
-    repsIncrease: 1, // Default increase per week
-    weightIncrease: 2, // Default weight % increase per week
+
+  // exercise library state and functions
+  const [exerciseLibrary, setExerciseLibrary] = useState([]);
+  //const [exerciseSearchTerm, setExerciseSearchTerm] = useState("");
+  //const [filteredExercises, setFilteredExercises] = useState([]);
+  //const [selectedExerciseForDetails, setSelectedExerciseForDetails] =
+  // useState(null);
+  const [loadingExercises, setLoadingExercises] = useState(false);
+
+  // Filter and search state
+  const [searchTerm, setSearchTerm] = useState("");
+  const [levelFilter, setLevelFilter] = useState("");
+  const [focusFilter, setFocusFilter] = useState("");
+  const [weeksFilter, setWeeksFilter] = useState("");
+
+  // User enrollment state
+  const [userEnrollments, setUserEnrollments] = useState([]);
+  const [loadingEnrollments, setLoadingEnrollments] = useState(false);
+  const [enrolling, setEnrolling] = useState(null);
+
+  // Modal controls
+  const {
+    isOpen: isProgramModalOpen,
+    onOpen: onProgramModalOpen,
+    onClose: onProgramModalClose,
+  } = useDisclosure();
+
+  const {
+    isOpen: isDeleteModalOpen,
+    onOpen: onDeleteModalOpen,
+    onClose: onDeleteModalClose,
+  } = useDisclosure();
+
+  const {
+    isOpen: isEnrollmentModalOpen,
+    onOpen: onEnrollmentModalOpen,
+    onClose: onEnrollmentModalClose,
+  } = useDisclosure();
+
+  const navigate = useNavigate();
+  const isMobile = useBreakpointValue({ base: true, md: false });
+
+  // Stepper for program creation
+  const steps = [
+    { title: "Goals", description: "Define program goals and overview" },
+    { title: "Structure", description: "Set up training structure" },
+    { title: "Progression", description: "Define progression rules" },
+    { title: "Week 1", description: "Create Week 1 template" },
+    { title: "Generate", description: "Auto-generate program" },
+    { title: "Fine-tune", description: "Adjust and finalize" },
+  ];
+
+  const { activeStep, setActiveStep } = useSteps({
+    index: programCreationStep,
+    count: steps.length,
   });
-  const [fitnessLevels, setFitnessLevels] = useState([]);
-  const [keyAdaptations, setKeyAdaptations] = useState([]);
-  const [equipmentList, setEquipmentList] = useState([]);
-  const [exercises, setExercises] = useState([]);
-  const [exerciseSearchTerm, setExerciseSearchTerm] = useState("");
-  const navigate = useNavigate(); // For navigation back to Dashboard
 
-  // Fetch data from Supabase tables
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+  // Fetch exercise library
+  const fetchExerciseLibrary = async () => {
+    try {
+      console.log("🔍 Starting to fetch exercise library in batches...");
+      setLoadingExercises(true);
 
-        // Fetch program overview data
-        const { data: overviewData, error: overviewError } = await supabase
-          .from("program_overview")
-          .select(
-            "Program_ID, Program_Name, Created, Program_Description, Level, Focus, Key_Training_Focus, Nutrition_Recovery, Training_Mix_Frequency, Key_Adaptations, Key_Assessments, Key_Assessment_Goals, Program_Macro_Cycle, Weeks, Prefered_Season, Program_Length_in_Weeks, Days_Per_Week, Time_Per_Workout, Equipment, MUSCLE_ENGAGEMENT, Deload_Week, Progression"
-          );
+      // Get total count first
+      const { count, error: countError } = await supabase
+        .from("Exercise Library")
+        .select("*", { count: "exact", head: true });
 
-        if (overviewError) throw overviewError;
+      if (countError) throw countError;
+      console.log("📊 Total exercises in database:", count);
 
-        // Fetch program library data
-        const { data: libraryData, error: libraryError } = await supabase
-          .from("program_library")
-          .select(
-            "program_id, program_name, program_macro_cycle, week, day, focus, target_sets, target_reps, load_prescription_p1RM, target_rpe, target_rest, target_tempo, target_time_distance, exercise"
-          );
+      const batchSize = 1000;
+      const batches = Math.ceil(count / batchSize);
+      let allExercises = [];
 
-        if (libraryError) throw libraryError;
+      console.log(
+        "📦 Loading",
+        batches,
+        "batches of",
+        batchSize,
+        "exercises each"
+      );
 
-        // Fetch dropdown data for Level from fitness_level table
-        const { data: fitnessLevelData, error: fitnessLevelError } =
-          await supabase.from("fitness_level").select("level_name"); // Adjust column name as per your table schema
+      // Load all batches
+      for (let i = 0; i < batches; i++) {
+        const start = i * batchSize;
+        const end = Math.min(start + batchSize - 1, count - 1);
 
-        if (fitnessLevelError) throw fitnessLevelError;
+        console.log(
+          `📦 Loading batch ${i + 1}/${batches} (records ${start}-${end})`
+        );
 
-        // Fetch dropdown data for Key Adaptations from key_fitness_adaptions table
-        const { data: adaptationsData, error: adaptationsError } =
-          await supabase
-            .from("key_fitness_adaptions")
-            .select("adaptation_name"); // Adjust column name as per your table schema
-
-        if (adaptationsError) throw adaptationsError;
-
-        // Fetch dropdown data for Equipment from equipment table
-        const { data: equipmentData, error: equipmentError } = await supabase
-          .from("equipment")
-          .select("equipment_name"); // Adjust column name as per your table schema
-
-        if (equipmentError) throw equipmentError;
-
-        // Fetch data for Exercise from "Exercise Library" table
-        const { data: exerciseData, error: exerciseError } = await supabase
+        const { data: batchData, error: batchError } = await supabase
           .from("Exercise Library")
-          .select("Exercise, Target_Muscle_Group, Primary_Equipment"); // Adjust table and column names as per your schema
+          .select(
+            `
+            Exercise,
+            Video_Demonstration,
+            "In-Depth_Explanation",
+            Target_Muscle_Group,
+            Primary_Equipment,
+            Favorite,
+            "1_RM_Alex",
+            Difficulty_Level,
+            Prime_Mover_Muscle,
+            Secondary_Muscle,
+            Tertiary_Muscle,
+            Body_Region,
+            "Movement_Pattern_#1",
+            "Movement_Pattern_#2",
+            "Movement_Pattern_#3",
+            Primary_Exercise_Classification,
+            Force_Type,
+            Mechanics,
+            Combination_Exercises
+          `
+          )
+          .range(start, end)
+          .order("Exercise", { ascending: true });
 
-        if (exerciseError) throw exerciseError;
+        if (batchError) {
+          console.error(`❌ Error in batch ${i + 1}:`, batchError);
+          throw batchError;
+        }
 
-        setProgramsOverview(overviewData || []);
-        setProgramsLibrary(libraryData || []);
-        setFitnessLevels(fitnessLevelData.map((item) => item.level_name) || []);
-        setKeyAdaptations(
-          adaptationsData.map((item) => item.adaptation_name) || []
+        if (batchData && batchData.length > 0) {
+          allExercises = [...allExercises, ...batchData];
+          console.log(
+            `✅ Batch ${i + 1} loaded: ${
+              batchData.length
+            } exercises (Total so far: ${allExercises.length})`
+          );
+        }
+      }
+
+      console.log(
+        "🔄 All batches loaded. Total exercises:",
+        allExercises.length
+      );
+      console.log("🎯 First exercise:", allExercises[0]?.Exercise);
+      console.log(
+        "🎯 Last exercise:",
+        allExercises[allExercises.length - 1]?.Exercise
+      );
+
+      // Set state with all exercises
+      console.log("🔄 Setting exercise library state...");
+      setExerciseLibrary(allExercises);
+
+      // Test searches in the complete dataset
+      const gobletExercises = allExercises.filter((ex) =>
+        ex.Exercise?.toLowerCase().includes("goblet")
+      );
+      console.log(
+        "🏺 Goblet exercises found in complete dataset:",
+        gobletExercises.map((ex) => ex.Exercise)
+      );
+
+      const squatExercises = allExercises.filter((ex) =>
+        ex.Exercise?.toLowerCase().includes("squat")
+      );
+      console.log("🏋️ Total squat exercises found:", squatExercises.length);
+      console.log(
+        "🏋️ First 5 squat exercises:",
+        squatExercises.slice(0, 5).map((ex) => ex.Exercise)
+      );
+
+      console.log("✅ Exercise library loading completed!");
+    } catch (err) {
+      console.error("💥 Error fetching exercise library:", err);
+      setError(`Failed to load exercise library: ${err.message}`);
+    } finally {
+      setLoadingExercises(false);
+    }
+  };
+
+  // Advanced exercise search function
+  /*const searchExercises = (searchTerm) => {
+    if (!searchTerm.trim()) {
+      setFilteredExercises([]);
+      return;
+    }
+
+    const terms = searchTerm
+      .toLowerCase()
+      .split(" ")
+      .filter((term) => term.length > 0);
+
+    const results = exerciseLibrary.filter((exercise) => {
+      const searchableText = [
+        exercise.Exercise,
+        exercise.Target_Muscle_Group,
+        exercise.Primary_Equipment,
+        exercise.Prime_Mover_Muscle,
+        exercise.Secondary_Muscle,
+        exercise.Body_Region,
+        exercise["Movement_Pattern_#1"], // Fixed: use bracket notation
+        exercise["Movement_Pattern_#2"], // Fixed: use bracket notation
+        exercise.Primary_Exercise_Classification,
+      ]
+        .join(" ")
+        .toLowerCase();
+
+      // Check if all search terms are found in the searchable text
+      return terms.every((term) => searchableText.includes(term));
+    });
+
+    // Sort results: favorites first, then alphabetically
+    const sortedResults = results.sort((a, b) => {
+      // Favorites first
+      const aIsFavorite = a.Favorite === "Yes" || a.Favorite === "Y";
+      const bIsFavorite = b.Favorite === "Yes" || b.Favorite === "Y";
+
+      if (aIsFavorite && !bIsFavorite) return -1;
+      if (!aIsFavorite && bIsFavorite) return 1;
+
+      // Then alphabetically
+      return a.Exercise.localeCompare(b.Exercise);
+    });
+
+    setFilteredExercises(sortedResults.slice(0, 20)); // Limit to 20 results
+  };
+*/
+
+  // Exercise Details Component
+  const ExerciseDetailsPopover = ({ exercise, children }) => {
+    if (!exercise) return children;
+
+    const isFavorite = exercise.Favorite === "Yes" || exercise.Favorite === "Y";
+
+    return (
+      <Popover placement="right" isLazy>
+        <PopoverTrigger>{children}</PopoverTrigger>
+        <PopoverContent width="400px" maxH="500px" overflowY="auto">
+          <PopoverArrow />
+          <PopoverCloseButton />
+          <PopoverHeader>
+            <HStack justify="space-between" align="start">
+              <VStack align="start" spacing={1}>
+                <Text fontWeight="bold" fontSize="md">
+                  {exercise.Exercise}
+                </Text>
+                {isFavorite && (
+                  <Badge colorScheme="yellow" variant="solid" size="sm">
+                    ⭐ Favorite
+                  </Badge>
+                )}
+              </VStack>
+              {exercise["1_RM_Alex"] && (
+                <Badge colorScheme="blue" variant="outline">
+                  1RM: {exercise["1_RM_Alex"]}kg
+                </Badge>
+              )}
+            </HStack>
+          </PopoverHeader>
+          <PopoverBody>
+            <VStack spacing={4} align="stretch">
+              {/* Video Demonstration */}
+              {exercise.Video_Demonstration && (
+                <Box>
+                  <Text fontWeight="semibold" fontSize="sm" mb={2}>
+                    Video Demonstration:
+                  </Text>
+                  {exercise.Video_Demonstration.includes("youtube.com") ||
+                  exercise.Video_Demonstration.includes("youtu.be") ? (
+                    <Link
+                      href={exercise.Video_Demonstration}
+                      isExternal
+                      color="blue.500"
+                      fontSize="sm"
+                    >
+                      Watch on YouTube 🎥
+                    </Link>
+                  ) : (
+                    <Link
+                      href={exercise.Video_Demonstration}
+                      isExternal
+                      color="blue.500"
+                      fontSize="sm"
+                    >
+                      View Video
+                    </Link>
+                  )}
+                </Box>
+              )}
+
+              {/* Target Muscle Group */}
+              <Box>
+                <Text fontWeight="semibold" fontSize="sm" mb={2}>
+                  Target Muscles:
+                </Text>
+                <Wrap spacing={1}>
+                  {exercise.Target_Muscle_Group && (
+                    <WrapItem>
+                      <Tag size="sm" colorScheme="teal">
+                        <TagLabel>{exercise.Target_Muscle_Group}</TagLabel>
+                      </Tag>
+                    </WrapItem>
+                  )}
+                  {exercise.Prime_Mover_Muscle && (
+                    <WrapItem>
+                      <Tag size="sm" colorScheme="blue">
+                        <TagLabel>
+                          Primary: {exercise.Prime_Mover_Muscle}
+                        </TagLabel>
+                      </Tag>
+                    </WrapItem>
+                  )}
+                  {exercise.Secondary_Muscle && (
+                    <WrapItem>
+                      <Tag size="sm" colorScheme="gray">
+                        <TagLabel>
+                          Secondary: {exercise.Secondary_Muscle}
+                        </TagLabel>
+                      </Tag>
+                    </WrapItem>
+                  )}
+                </Wrap>
+              </Box>
+
+              {/* Equipment */}
+              {exercise.Primary_Equipment && (
+                <Box>
+                  <Text fontWeight="semibold" fontSize="sm" mb={1}>
+                    Equipment:
+                  </Text>
+                  <Tag size="sm" colorScheme="orange">
+                    <TagLabel>{exercise.Primary_Equipment}</TagLabel>
+                  </Tag>
+                </Box>
+              )}
+
+              {/* Difficulty Level */}
+              {exercise.Difficulty_Level && (
+                <Box>
+                  <Text fontWeight="semibold" fontSize="sm" mb={1}>
+                    Difficulty:
+                  </Text>
+                  <Badge
+                    colorScheme={
+                      exercise.Difficulty_Level === "Beginner"
+                        ? "green"
+                        : exercise.Difficulty_Level === "Intermediate"
+                        ? "yellow"
+                        : exercise.Difficulty_Level === "Advanced"
+                        ? "red"
+                        : "gray"
+                    }
+                  >
+                    {exercise.Difficulty_Level}
+                  </Badge>
+                </Box>
+              )}
+
+              {/* Movement Patterns - Fixed bracket notation */}
+              {(exercise["Movement_Pattern_#1"] ||
+                exercise["Movement_Pattern_#2"]) && (
+                <Box>
+                  <Text fontWeight="semibold" fontSize="sm" mb={2}>
+                    Movement Patterns:
+                  </Text>
+                  <Wrap spacing={1}>
+                    {exercise["Movement_Pattern_#1"] && (
+                      <WrapItem>
+                        <Tag size="sm" colorScheme="purple">
+                          <TagLabel>{exercise["Movement_Pattern_#1"]}</TagLabel>
+                        </Tag>
+                      </WrapItem>
+                    )}
+                    {exercise["Movement_Pattern_#2"] && (
+                      <WrapItem>
+                        <Tag size="sm" colorScheme="purple" variant="outline">
+                          <TagLabel>{exercise["Movement_Pattern_#2"]}</TagLabel>
+                        </Tag>
+                      </WrapItem>
+                    )}
+                  </Wrap>
+                </Box>
+              )}
+
+              {/* In-Depth Explanation */}
+              {exercise["In-Depth_Explanation"] && (
+                <Box>
+                  <Text fontWeight="semibold" fontSize="sm" mb={2}>
+                    Exercise Notes:
+                  </Text>
+                  <Text fontSize="sm" color="gray.700">
+                    {exercise["In-Depth_Explanation"]}
+                  </Text>
+                </Box>
+              )}
+            </VStack>
+          </PopoverBody>
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
+  // Enhanced Exercise Search Component
+  const ExerciseSearchInput = ({ onSelectExercise, currentValue = "" }) => {
+    const [searchTerm, setSearchTerm] = useState(currentValue);
+    const [showResults, setShowResults] = useState(false);
+    const [isMouseOverResults, setIsMouseOverResults] = useState(false);
+    const [localFilteredExercises, setLocalFilteredExercises] = useState([]);
+    const [localLoading, setLocalLoading] = useState(false);
+
+    // Enhanced search function with better matching
+    const performLocalSearch = (term) => {
+      if (!term.trim()) {
+        setLocalFilteredExercises([]);
+        return;
+      }
+
+      const searchTerms = term
+        .toLowerCase()
+        .trim()
+        .split(/\s+/)
+        .filter((t) => t.length > 0);
+
+      const results = exerciseLibrary.filter((exercise) => {
+        // Create comprehensive searchable text
+        const searchableFields = [
+          exercise.Exercise,
+          exercise.Target_Muscle_Group,
+          exercise.Primary_Equipment,
+          exercise.Prime_Mover_Muscle,
+          exercise.Secondary_Muscle,
+          exercise.Tertiary_Muscle,
+          exercise.Body_Region,
+          exercise["Movement_Pattern_#1"],
+          exercise["Movement_Pattern_#2"],
+          exercise["Movement_Pattern_#3"],
+          exercise.Primary_Exercise_Classification,
+          exercise.Force_Type,
+          exercise.Mechanics,
+          exercise.Combination_Exercises,
+        ].filter(Boolean); // Remove null/undefined values
+
+        const searchableText = searchableFields.join(" ").toLowerCase();
+
+        // Multiple matching strategies
+        const exactMatch = searchableText.includes(term.toLowerCase());
+        const allTermsMatch = searchTerms.every((searchTerm) =>
+          searchableText.includes(searchTerm)
         );
-        setEquipmentList(
-          equipmentData.map((item) => item.equipment_name) || []
+        const exerciseNameMatch = exercise.Exercise?.toLowerCase().includes(
+          term.toLowerCase()
         );
-        setExercises(exerciseData || []);
-      } catch (err) {
-        setError(err.message || "Failed to fetch data");
-        setProgramsOverview([]);
-        setProgramsLibrary([]);
-        setFitnessLevels([]);
-        setKeyAdaptations([]);
-        setEquipmentList([]);
-        setExercises([]);
-      } finally {
-        setLoading(false);
+
+        // Word boundary matching for better results
+        const wordBoundaryMatch = searchTerms.some((searchTerm) => {
+          const regex = new RegExp(
+            `\\b${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
+            "i"
+          );
+          return regex.test(searchableText);
+        });
+
+        return (
+          exactMatch || allTermsMatch || exerciseNameMatch || wordBoundaryMatch
+        );
+      });
+
+      // Enhanced sorting algorithm
+      const sortedResults = results.sort((a, b) => {
+        const aIsFavorite = a.Favorite === "Yes" || a.Favorite === "Y";
+        const bIsFavorite = b.Favorite === "Yes" || b.Favorite === "Y";
+
+        // 1. Favorites first
+        if (aIsFavorite && !bIsFavorite) return -1;
+        if (!aIsFavorite && bIsFavorite) return 1;
+
+        // 2. Exact exercise name matches
+        const aExactMatch = a.Exercise?.toLowerCase() === term.toLowerCase();
+        const bExactMatch = b.Exercise?.toLowerCase() === term.toLowerCase();
+        if (aExactMatch && !bExactMatch) return -1;
+        if (!aExactMatch && bExactMatch) return 1;
+
+        // 3. Exercise name starts with search term
+        const aStartsWith = a.Exercise?.toLowerCase().startsWith(
+          term.toLowerCase()
+        );
+        const bStartsWith = b.Exercise?.toLowerCase().startsWith(
+          term.toLowerCase()
+        );
+        if (aStartsWith && !bStartsWith) return -1;
+        if (!aStartsWith && bStartsWith) return 1;
+
+        // 4. Exercise name contains search term
+        const aContains = a.Exercise?.toLowerCase().includes(
+          term.toLowerCase()
+        );
+        const bContains = b.Exercise?.toLowerCase().includes(
+          term.toLowerCase()
+        );
+        if (aContains && !bContains) return -1;
+        if (!aContains && bContains) return 1;
+
+        // 5. Alphabetical order
+        return a.Exercise?.localeCompare(b.Exercise || "") || 0;
+      });
+
+      console.log(`Search for "${term}" found ${sortedResults.length} results`); // Debug log
+      setLocalFilteredExercises(sortedResults.slice(0, 25)); // Increased to 25 results
+    };
+
+    // Debounced search effect
+    useEffect(() => {
+      if (!searchTerm.trim()) {
+        setLocalFilteredExercises([]);
+        return;
+      }
+
+      setLocalLoading(true);
+      const timeoutId = setTimeout(() => {
+        performLocalSearch(searchTerm);
+        setLocalLoading(false);
+      }, 200); // Reduced delay for faster response
+
+      return () => {
+        clearTimeout(timeoutId);
+        setLocalLoading(false);
+      };
+    }, [searchTerm, exerciseLibrary]);
+
+    // Update search term when currentValue changes
+    useEffect(() => {
+      if (currentValue !== searchTerm) {
+        setSearchTerm(currentValue);
+      }
+    }, [currentValue]);
+
+    const handleSelectExercise = (exercise) => {
+      setSearchTerm(exercise.Exercise);
+      setShowResults(false);
+      setLocalFilteredExercises([]);
+      setIsMouseOverResults(false);
+      onSelectExercise(exercise);
+    };
+
+    const handleInputFocus = () => {
+      setShowResults(true);
+      if (searchTerm.trim() && localFilteredExercises.length === 0) {
+        performLocalSearch(searchTerm);
       }
     };
 
-    fetchData();
-  }, []);
+    const handleInputBlur = () => {
+      if (!isMouseOverResults) {
+        setTimeout(() => {
+          setShowResults(false);
+        }, 150);
+      }
+    };
 
-  // Handle viewing detailed program info
-  const viewProgramDetails = (program) => {
-    setSelectedProgram(program);
+    const handleInputChange = (e) => {
+      const value = e.target.value;
+      setSearchTerm(value);
+      setShowResults(true);
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        setShowResults(false);
+        setLocalFilteredExercises([]);
+      }
+    };
+
+    return (
+      <Box position="relative">
+        <Input
+          value={searchTerm}
+          onChange={handleInputChange}
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
+          onKeyDown={handleKeyDown}
+          placeholder="Search exercises (e.g., 'goblet squat', 'chest press')..."
+          size="sm"
+          autoComplete="off"
+        />
+
+        {showResults && (
+          <Box
+            position="absolute"
+            top="100%"
+            left={0}
+            right={0}
+            bg="white"
+            border="1px solid"
+            borderColor="gray.200"
+            borderRadius="md"
+            boxShadow="lg"
+            maxH="350px"
+            overflowY="auto"
+            zIndex={1000}
+            mt={1}
+            onMouseEnter={() => setIsMouseOverResults(true)}
+            onMouseLeave={() => setIsMouseOverResults(false)}
+          >
+            {localLoading ? (
+              <Flex justify="center" align="center" p={4}>
+                <Spinner size="sm" />
+                <Text ml={2} fontSize="sm">
+                  Searching...
+                </Text>
+              </Flex>
+            ) : localFilteredExercises.length > 0 ? (
+              <VStack spacing={0} align="stretch">
+                {localFilteredExercises.map((exercise) => {
+                  const isFavorite =
+                    exercise.Favorite === "Yes" || exercise.Favorite === "Y";
+
+                  return (
+                    <ExerciseDetailsPopover
+                      key={exercise.Exercise}
+                      exercise={exercise}
+                    >
+                      <Box
+                        p={3}
+                        _hover={{ bg: "gray.50" }}
+                        cursor="pointer"
+                        borderBottom="1px solid"
+                        borderColor="gray.100"
+                        onClick={() => handleSelectExercise(exercise)}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                        }}
+                      >
+                        <HStack justify="space-between" align="start">
+                          <VStack align="start" spacing={1} flex={1}>
+                            <HStack>
+                              <Text fontWeight="medium" fontSize="sm">
+                                {exercise.Exercise}
+                              </Text>
+                              {isFavorite && (
+                                <Badge colorScheme="yellow" size="sm">
+                                  ⭐
+                                </Badge>
+                              )}
+                            </HStack>
+
+                            <HStack spacing={2} flexWrap="wrap">
+                              {exercise.Target_Muscle_Group && (
+                                <Tag size="xs" colorScheme="teal">
+                                  {exercise.Target_Muscle_Group}
+                                </Tag>
+                              )}
+                              {exercise.Primary_Equipment && (
+                                <Tag size="xs" colorScheme="orange">
+                                  {exercise.Primary_Equipment}
+                                </Tag>
+                              )}
+                              {exercise["1_RM_Alex"] && (
+                                <Tag size="xs" colorScheme="blue">
+                                  1RM: {exercise["1_RM_Alex"]}kg
+                                </Tag>
+                              )}
+                            </HStack>
+                          </VStack>
+
+                          <Text fontSize="xs" color="gray.500">
+                            Hover for details
+                          </Text>
+                        </HStack>
+                      </Box>
+                    </ExerciseDetailsPopover>
+                  );
+                })}
+
+                {localFilteredExercises.length === 25 && (
+                  <Box
+                    p={2}
+                    textAlign="center"
+                    bg="gray.50"
+                    borderTop="1px solid"
+                    borderColor="gray.200"
+                  >
+                    <Text fontSize="xs" color="gray.600">
+                      Showing first 25 results. Refine search for more specific
+                      results.
+                    </Text>
+                  </Box>
+                )}
+              </VStack>
+            ) : searchTerm.trim() && !localLoading ? (
+              <Box p={4}>
+                <Text fontSize="sm" color="gray.500" textAlign="center">
+                  No exercises found matching "{searchTerm}"
+                </Text>
+                <Text fontSize="xs" color="gray.400" textAlign="center" mt={1}>
+                  Try different keywords like "squat", "press", or "pull"
+                </Text>
+              </Box>
+            ) : searchTerm.trim() === "" ? (
+              <Box p={4}>
+                <Text fontSize="sm" color="gray.400" textAlign="center">
+                  Start typing to search exercises...
+                </Text>
+              </Box>
+            ) : null}
+          </Box>
+        )}
+      </Box>
+    );
   };
 
-  // Close detailed view
-  const closeDetails = () => {
-    setSelectedProgram(null);
+  // DELETE Add this temporary function to debug (remove after testing)
+  const debugExerciseSearch = () => {
+    console.log("Total exercises loaded:", exerciseLibrary.length);
+    console.log(
+      "Sample exercises:",
+      exerciseLibrary.slice(0, 5).map((ex) => ex.Exercise)
+    );
+
+    // Search for "goblet" specifically
+    const gobletExercises = exerciseLibrary.filter((ex) =>
+      ex.Exercise?.toLowerCase().includes("goblet")
+    );
+    console.log(
+      "Exercises containing 'goblet':",
+      gobletExercises.map((ex) => ex.Exercise)
+    );
+
+    // Search for "squat" specifically
+    const squatExercises = exerciseLibrary.filter((ex) =>
+      ex.Exercise?.toLowerCase().includes("squat")
+    );
+    console.log(
+      "Exercises containing 'squat':",
+      squatExercises.map((ex) => ex.Exercise)
+    );
+  };
+
+  // Call this in your useEffect after fetching exercises
+  useEffect(() => {
+    const initializeData = async () => {
+      console.log("🚀 Initializing application data...");
+
+      try {
+        await fetchPrograms();
+        console.log("✅ Programs loaded");
+
+        await fetchUserEnrollments();
+        console.log("✅ User enrollments loaded");
+
+        await fetchExerciseLibrary();
+        console.log("✅ Exercise library fetch completed");
+      } catch (error) {
+        console.error("💥 Error during initialization:", error);
+      }
+
+      // Debug after a delay
+      setTimeout(() => {
+        console.log("🔍 Final exercise library state:", exerciseLibrary.length);
+        debugExerciseSearch();
+      }, 2000);
+    };
+
+    initializeData();
+  }, []);
+
+  // DELETE Add this test function to check if the table exists and is accessible
+  const testDatabaseConnection = async () => {
+    try {
+      console.log("🧪 Testing database connection...");
+
+      // Test 1: Simple count query
+      const { count, error: countError } = await supabase
+        .from("Exercise Library")
+        .select("*", { count: "exact", head: true });
+
+      console.log("📊 Exercise count:", count, "Error:", countError);
+
+      // Test 2: Get just first 5 exercises with minimal fields
+      const { data: testData, error: testError } = await supabase
+        .from("Exercise Library")
+        .select("Exercise")
+        .limit(5);
+
+      console.log("🧪 Test query result:", testData, "Error:", testError);
+
+      // Test 3: Check table structure
+      const { data: structureData, error: structureError } = await supabase
+        .from("Exercise Library")
+        .select("*")
+        .limit(1);
+
+      console.log("🏗️ Table structure (first row):", structureData?.[0]);
+      console.log(
+        "🏗️ Available columns:",
+        structureData?.[0] ? Object.keys(structureData[0]) : "No data"
+      );
+    } catch (error) {
+      console.error("💥 Database test failed:", error);
+    }
+  };
+
+  // Fetch programs with correct schema
+  const fetchPrograms = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Fetch program overview with correct schema fields
+      const { data: programOverview, error: overviewError } = await supabase
+        .from("program_overview")
+        .select(
+          `
+          Program_ID,
+          Program_Name,
+          Created,
+          Program_Description,
+          Level,
+          Focus,
+          Key_Training_Focus,
+          Nutrition_Recovery,
+          Training_Mix_Frequency,
+          Key_Adaptations,
+          Key_Assessments,
+          Key_Assessment_Goals,
+          Program_Macro_Cycle,
+          Weeks,
+          Prefered_Season,
+          Program_Length_in_Weeks,
+          Days_Per_Week,
+          Time_Per_Workout,
+          Equipment,
+          MUSCLE_ENGAGEMENT,
+          Deload_Week,
+          Progression,
+          user_id
+        `
+        )
+        .order("Program_Name", { ascending: true });
+
+      if (overviewError) throw overviewError;
+
+      // Fetch program library with correct schema fields
+      const programsWithDetails = await Promise.all(
+        programOverview.map(async (program) => {
+          const { data: programDetails, error: detailsError } = await supabase
+            .from("program_library")
+            .select(
+              `
+              program_library_id,
+              program_name,
+              program_macro_cycle,
+              week,
+              day,
+              focus,
+              exercise,
+              exercise_program_note,
+              superset,
+              target_sets,
+              target_reps,
+              target_rpe,
+              target_rest,
+              target_tempo,
+              target_time_distance,
+              program_id,
+              target_weight_kg,
+              load_prescription_p1RM,
+              user_id
+            `
+            )
+            .eq("program_id", program.Program_ID)
+            .order("week", { ascending: true })
+            .order("day", { ascending: true });
+
+          if (detailsError) {
+            console.error(
+              `Error fetching details for program ${program.Program_ID}:`,
+              detailsError
+            );
+            return { ...program, exercises: [] };
+          }
+
+          return {
+            ...program,
+            exercises: programDetails || [],
+          };
+        })
+      );
+
+      setPrograms(programsWithDetails);
+      console.log(
+        "Fetched complete programs with correct schema:",
+        programsWithDetails
+      );
+    } catch (err) {
+      console.error("Error fetching programs:", err);
+      setError(err.message || "Failed to fetch workout programs");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Fetch user enrollments
+  const fetchUserEnrollments = async () => {
+    try {
+      setLoadingEnrollments(true);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) return;
+
+      const { data: enrollments, error } = await supabase
+        .from("user_programs")
+        .select(
+          `
+          *,
+          program_overview!inner(Program_Name, Focus, Weeks, Level)
+        `
+        )
+        .eq("user_id", session.user.id);
+
+      if (error) throw error;
+
+      setUserEnrollments(enrollments || []);
+    } catch (err) {
+      console.error("Error fetching user enrollments:", err);
+    } finally {
+      setLoadingEnrollments(false);
+    }
+  };
+
+  // Enroll in a program
+  const enrollInProgram = async (programId) => {
+    try {
+      setEnrolling(programId);
+      setError(null);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setError("You must be logged in to enroll in a program");
+        return;
+      }
+
+      const userId = session.user.id;
+
+      // Check if user is already enrolled
+      const { data: existingEnrollment, error: checkError } = await supabase
+        .from("user_programs")
+        .select("*")
+        .eq("user_id", userId)
+        .eq("program_id", programId)
+        .single();
+
+      if (checkError && checkError.code !== "PGRST116") {
+        throw checkError;
+      }
+
+      if (existingEnrollment) {
+        setError("You are already enrolled in this program");
+        return;
+      }
+
+      // Enroll user
+      const { error: enrollError } = await supabase
+        .from("user_programs")
+        .insert({
+          user_id: userId,
+          program_id: programId,
+          enrolled_at: new Date().toISOString(),
+        });
+
+      if (enrollError) throw enrollError;
+
+      setSuccessMessage("Successfully enrolled in program!");
+      setTimeout(() => setSuccessMessage(null), 3000);
+
+      await fetchUserEnrollments();
+    } catch (err) {
+      console.error("Error enrolling in program:", err);
+      setError(err.message || "Failed to enroll in program");
+    } finally {
+      setEnrolling(null);
+    }
+  };
+
+  // Helper functions for focus and colors
+  const getFocusType = (focus) => {
+    const focusLower = focus?.toLowerCase() || "";
+    if (focusLower.includes("strength")) return "strength";
+    if (focusLower.includes("hypertrophy") || focusLower.includes("muscle"))
+      return "hypertrophy";
+    if (focusLower.includes("power")) return "power";
+    if (focusLower.includes("endurance")) return "endurance";
+    if (focusLower.includes("cardio")) return "cardio";
+    if (focusLower.includes("mobility")) return "mobility";
+    return "general";
+  };
+
+  const getFocusColorScheme = (focusType) => {
+    const schemes = {
+      power: "red",
+      strength: "pink",
+      hypertrophy: "green",
+      endurance: "yellow",
+      cardio: "orange",
+      mobility: "purple",
+      general: "blue",
+    };
+    return schemes[focusType] || schemes.general;
+  };
+
+  // Check if user is enrolled
+  const isUserEnrolled = (programId) => {
+    return userEnrollments.some(
+      (enrollment) => enrollment.program_id === programId
+    );
+  };
+
+  // Get program statistics
+  const getProgramStats = (program) => {
+    const exercises = program.exercises || [];
+    const totalExercises = exercises.length;
+    const uniqueWeeks = [...new Set(exercises.map((ex) => ex.week))].length;
+    const uniqueDays = [
+      ...new Set(exercises.map((ex) => `${ex.week}-${ex.day}`)),
+    ].length;
+
+    return {
+      totalExercises,
+      uniqueWeeks,
+      uniqueDays,
+      avgExercisesPerDay:
+        totalExercises > 0 ? Math.round(totalExercises / uniqueDays) : 0,
+    };
+  };
+
+  // Filter programs
+  const filteredPrograms = programs.filter((program) => {
+    const matchesSearch =
+      !searchTerm ||
+      program.Program_Name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      program.Program_Description?.toLowerCase().includes(
+        searchTerm.toLowerCase()
+      );
+
+    const matchesLevel = !levelFilter || program.Level === levelFilter;
+    const matchesFocus = !focusFilter || program.Focus === focusFilter;
+
+    const matchesWeeks =
+      !weeksFilter ||
+      (weeksFilter === "short" && program.Weeks <= 4) ||
+      (weeksFilter === "medium" && program.Weeks > 4 && program.Weeks <= 12) ||
+      (weeksFilter === "long" && program.Weeks > 12);
+
+    return matchesSearch && matchesLevel && matchesFocus && matchesWeeks;
+  });
+
+  // Get unique values for filters
+  const uniqueLevels = [
+    ...new Set(programs.map((p) => p.Level).filter(Boolean)),
+  ];
+  const uniqueFocuses = [
+    ...new Set(programs.map((p) => p.Focus).filter(Boolean)),
+  ];
+
+  // Clear filters
+  const clearFilters = () => {
+    setSearchTerm("");
+    setLevelFilter("");
+    setFocusFilter("");
+    setWeeksFilter("");
+  };
+
+  // Initialize data on mount
+  useEffect(() => {
+    const initializeData = async () => {
+      await fetchPrograms();
+      await fetchUserEnrollments();
+      await fetchExerciseLibrary();
+    };
+
+    initializeData();
+  }, []);
+
+  if (loading && programs.length === 0) {
+    return (
+      <Box p={4} textAlign="center">
+        <Spinner size="lg" color="teal.500" />
+        <Text mt={2}>Loading workout programs...</Text>
+      </Box>
+    );
+  }
+  // Step 1: Program Goals & Overview Component
+  const renderStep1Goals = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Heading size="md" mb={4} color="teal.600">
+          Define Program Goals & Overview
+        </Heading>
+        <Text color="gray.600" mb={6}>
+          Set the foundation for your training program by defining its core
+          objectives and parameters.
+        </Text>
+      </Box>
+
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+        <FormControl isRequired>
+          <FormLabel>Program Name</FormLabel>
+          <Input
+            value={programOverview.Program_Name}
+            onChange={(e) =>
+              setProgramOverview((prev) => ({
+                ...prev,
+                Program_Name: e.target.value,
+              }))
+            }
+            placeholder="e.g., Strength Building Phase 1"
+          />
+        </FormControl>
+
+        <FormControl isRequired>
+          <FormLabel>Training Level</FormLabel>
+          <Select
+            value={programOverview.Level}
+            onChange={(e) =>
+              setProgramOverview((prev) => ({ ...prev, Level: e.target.value }))
+            }
+            placeholder="Select training level"
+          >
+            <option value="Beginner">Beginner (0-1 years)</option>
+            <option value="Intermediate">Intermediate (1-3 years)</option>
+            <option value="Advanced">Advanced (3+ years)</option>
+            <option value="Expert">Expert/Competitive</option>
+          </Select>
+        </FormControl>
+
+        <FormControl isRequired>
+          <FormLabel>Primary Focus</FormLabel>
+          <Select
+            value={programOverview.Focus}
+            onChange={(e) =>
+              setProgramOverview((prev) => ({ ...prev, Focus: e.target.value }))
+            }
+            placeholder="Select primary focus"
+          >
+            {WORKOUT_FOCUS_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </Select>
+        </FormControl>
+
+        <FormControl isRequired>
+          <FormLabel>Program Duration (Weeks)</FormLabel>
+          <NumberInput
+            value={programOverview.Program_Length_in_Weeks || ""}
+            onChange={(value) =>
+              setProgramOverview((prev) => ({
+                ...prev,
+                Program_Length_in_Weeks: parseInt(value) || null,
+                Weeks: value,
+              }))
+            }
+            min={1}
+            max={52}
+          >
+            <NumberInputField placeholder="Enter weeks" />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
+            </NumberInputStepper>
+          </NumberInput>
+        </FormControl>
+      </SimpleGrid>
+
+      <FormControl>
+        <FormLabel>Program Description</FormLabel>
+        <Textarea
+          value={programOverview.Program_Description}
+          onChange={(e) =>
+            setProgramOverview((prev) => ({
+              ...prev,
+              Program_Description: e.target.value,
+            }))
+          }
+          placeholder="Describe the program's objectives, methodology, and target outcomes..."
+          rows={4}
+        />
+      </FormControl>
+
+      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+        <FormControl>
+          <FormLabel>Days Per Week</FormLabel>
+          <NumberInput
+            value={programOverview.Days_Per_Week || ""}
+            onChange={(value) =>
+              setProgramOverview((prev) => ({ ...prev, Days_Per_Week: value }))
+            }
+            min={1}
+            max={7}
+          >
+            <NumberInputField />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
+            </NumberInputStepper>
+          </NumberInput>
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Time Per Workout</FormLabel>
+          <Input
+            value={programOverview.Time_Per_Workout}
+            onChange={(e) =>
+              setProgramOverview((prev) => ({
+                ...prev,
+                Time_Per_Workout: e.target.value,
+              }))
+            }
+            placeholder="e.g., 60-90 minutes"
+          />
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Equipment Needed</FormLabel>
+          <Input
+            value={programOverview.Equipment}
+            onChange={(e) =>
+              setProgramOverview((prev) => ({
+                ...prev,
+                Equipment: e.target.value,
+              }))
+            }
+            placeholder="e.g., Barbell, Dumbbells, Gym"
+          />
+        </FormControl>
+      </SimpleGrid>
+
+      <Accordion allowToggle>
+        <AccordionItem>
+          <AccordionButton>
+            <Box flex="1" textAlign="left">
+              <Text fontWeight="semibold">Advanced Options</Text>
+            </Box>
+            <AccordionIcon />
+          </AccordionButton>
+          <AccordionPanel pb={4}>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Key Training Focus</FormLabel>
+                <Textarea
+                  value={programOverview.Key_Training_Focus}
+                  onChange={(e) =>
+                    setProgramOverview((prev) => ({
+                      ...prev,
+                      Key_Training_Focus: e.target.value,
+                    }))
+                  }
+                  placeholder="Specific training emphases..."
+                  rows={3}
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Key Adaptations</FormLabel>
+                <Textarea
+                  value={programOverview.Key_Adaptations}
+                  onChange={(e) =>
+                    setProgramOverview((prev) => ({
+                      ...prev,
+                      Key_Adaptations: e.target.value,
+                    }))
+                  }
+                  placeholder="Expected physiological adaptations..."
+                  rows={3}
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Muscle Engagement</FormLabel>
+                <Input
+                  value={programOverview.MUSCLE_ENGAGEMENT}
+                  onChange={(e) =>
+                    setProgramOverview((prev) => ({
+                      ...prev,
+                      MUSCLE_ENGAGEMENT: e.target.value,
+                    }))
+                  }
+                  placeholder="Primary muscle groups targeted"
+                />
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Preferred Season</FormLabel>
+                <Select
+                  value={programOverview.Prefered_Season}
+                  onChange={(e) =>
+                    setProgramOverview((prev) => ({
+                      ...prev,
+                      Prefered_Season: e.target.value,
+                    }))
+                  }
+                  placeholder="Select season"
+                >
+                  <option value="Spring">Spring</option>
+                  <option value="Summer">Summer</option>
+                  <option value="Fall">Fall</option>
+                  <option value="Winter">Winter</option>
+                  <option value="Year-round">Year-round</option>
+                </Select>
+              </FormControl>
+            </SimpleGrid>
+          </AccordionPanel>
+        </AccordionItem>
+      </Accordion>
+    </VStack>
+  );
+
+  // Step 2: Training Structure Component
+  const renderStep2Structure = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Heading size="md" mb={4} color="teal.600">
+          Set Up Training Structure
+        </Heading>
+        <Text color="gray.600" mb={6}>
+          Choose how you want to organize your training sessions throughout the
+          week.
+        </Text>
+      </Box>
+
+      <FormControl isRequired>
+        <FormLabel>Training Structure Type</FormLabel>
+        <RadioGroup
+          value={trainingStructure.type}
+          onChange={(value) =>
+            setTrainingStructure((prev) => ({ ...prev, type: value }))
+          }
+        >
+          <VStack align="start" spacing={3}>
+            {TRAINING_STRUCTURES.map((structure) => (
+              <Box
+                key={structure.value}
+                p={4}
+                border="1px solid"
+                borderColor="gray.200"
+                borderRadius="md"
+                width="100%"
+              >
+                <Radio value={structure.value} mb={2}>
+                  <Text fontWeight="semibold">{structure.label}</Text>
+                </Radio>
+                <Text fontSize="sm" color="gray.600" ml={6}>
+                  {structure.description}
+                </Text>
+              </Box>
+            ))}
+          </VStack>
+        </RadioGroup>
+      </FormControl>
+
+      {trainingStructure.type && (
+        <Box p={4} bg="blue.50" borderRadius="md">
+          <Text fontWeight="semibold" mb={2}>
+            Structure Preview:
+          </Text>
+          {trainingStructure.type === "push_pull_legs" && (
+            <VStack align="start" spacing={1}>
+              <Text fontSize="sm">
+                • Day 1: Push (Chest, Shoulders, Triceps)
+              </Text>
+              <Text fontSize="sm">• Day 2: Pull (Back, Biceps)</Text>
+              <Text fontSize="sm">
+                • Day 3: Legs (Quads, Hamstrings, Glutes, Calves)
+              </Text>
+            </VStack>
+          )}
+          {trainingStructure.type === "upper_lower" && (
+            <VStack align="start" spacing={1}>
+              <Text fontSize="sm">
+                • Day 1: Upper Body (Chest, Back, Shoulders, Arms)
+              </Text>
+              <Text fontSize="sm">• Day 2: Lower Body (Legs, Glutes)</Text>
+            </VStack>
+          )}
+          {trainingStructure.type === "full_body" && (
+            <Text fontSize="sm">
+              Each session targets all major muscle groups
+            </Text>
+          )}
+        </Box>
+      )}
+
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+        <FormControl>
+          <FormLabel>Training Days Per Week</FormLabel>
+          <NumberInput
+            value={trainingStructure.daysPerWeek}
+            onChange={(value) =>
+              setTrainingStructure((prev) => ({
+                ...prev,
+                daysPerWeek: parseInt(value) || 3,
+              }))
+            }
+            min={1}
+            max={7}
+          >
+            <NumberInputField />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
+            </NumberInputStepper>
+          </NumberInput>
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Sessions Per Day</FormLabel>
+          <NumberInput
+            value={trainingStructure.sessionsPerDay}
+            onChange={(value) =>
+              setTrainingStructure((prev) => ({
+                ...prev,
+                sessionsPerDay: parseInt(value) || 1,
+              }))
+            }
+            min={1}
+            max={3}
+          >
+            <NumberInputField />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
+            </NumberInputStepper>
+          </NumberInput>
+        </FormControl>
+      </SimpleGrid>
+    </VStack>
+  );
+
+  // Step 3: Progression Rules Component
+  const renderStep3Progression = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Heading size="md" mb={4} color="teal.600">
+          Define Progression Rules
+        </Heading>
+        <Text color="gray.600" mb={6}>
+          Set how your program will progress over time to ensure continuous
+          adaptation.
+        </Text>
+      </Box>
+
+      <FormControl isRequired>
+        <FormLabel>Progression Type</FormLabel>
+        <RadioGroup
+          value={progressionRules.type}
+          onChange={(value) =>
+            setProgressionRules((prev) => ({ ...prev, type: value }))
+          }
+        >
+          <VStack align="start" spacing={3}>
+            {PROGRESSION_TYPES.map((progression) => (
+              <Box
+                key={progression.value}
+                p={4}
+                border="1px solid"
+                borderColor="gray.200"
+                borderRadius="md"
+                width="100%"
+              >
+                <Radio value={progression.value} mb={2}>
+                  <Text fontWeight="semibold">{progression.label}</Text>
+                </Radio>
+                <Text fontSize="sm" color="gray.600" ml={6}>
+                  {progression.description}
+                </Text>
+              </Box>
+            ))}
+          </VStack>
+        </RadioGroup>
+      </FormControl>
+
+      {progressionRules.type && (
+        <Box p={4} bg="green.50" borderRadius="md">
+          <Text fontWeight="semibold" mb={4}>
+            Progression Settings
+          </Text>
+
+          {progressionRules.type === "linear" && (
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Weight Increase Per Week (kg)</FormLabel>
+                <NumberInput
+                  value={progressionRules.weightProgression}
+                  onChange={(value) =>
+                    setProgressionRules((prev) => ({
+                      ...prev,
+                      weightProgression: parseFloat(value) || 2.5,
+                    }))
+                  }
+                  step={0.5}
+                  min={0.5}
+                  max={10}
+                  precision={1}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+            </SimpleGrid>
+          )}
+
+          {progressionRules.type === "double" && (
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Rep Increase Per Week</FormLabel>
+                <NumberInput
+                  value={progressionRules.repProgression}
+                  onChange={(value) =>
+                    setProgressionRules((prev) => ({
+                      ...prev,
+                      repProgression: parseInt(value) || 1,
+                    }))
+                  }
+                  min={1}
+                  max={5}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+              <FormControl>
+                <FormLabel>Weight Increase When Rep Target Hit (kg)</FormLabel>
+                <NumberInput
+                  value={progressionRules.weightProgression}
+                  onChange={(value) =>
+                    setProgressionRules((prev) => ({
+                      ...prev,
+                      weightProgression: parseFloat(value) || 2.5,
+                    }))
+                  }
+                  step={0.5}
+                  min={0.5}
+                  max={10}
+                  precision={1}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+            </SimpleGrid>
+          )}
+
+          {progressionRules.type === "percentage" && (
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Percentage Increase Per Week (%)</FormLabel>
+                <NumberInput
+                  value={progressionRules.percentageIncrease}
+                  onChange={(value) =>
+                    setProgressionRules((prev) => ({
+                      ...prev,
+                      percentageIncrease: parseFloat(value) || 2.5,
+                    }))
+                  }
+                  step={0.5}
+                  min={0.5}
+                  max={10}
+                  precision={1}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+            </SimpleGrid>
+          )}
+
+          {progressionRules.type === "block" && (
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <FormControl>
+                <FormLabel>Block Length (Weeks)</FormLabel>
+                <NumberInput
+                  value={progressionRules.blockLength}
+                  onChange={(value) =>
+                    setProgressionRules((prev) => ({
+                      ...prev,
+                      blockLength: parseInt(value) || 4,
+                    }))
+                  }
+                  min={2}
+                  max={8}
+                >
+                  <NumberInputField />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+              </FormControl>
+            </SimpleGrid>
+          )}
+
+          {progressionRules.type === "wave" && (
+            <FormControl>
+              <FormLabel>Wave Pattern (% 1RM)</FormLabel>
+              <HStack>
+                {progressionRules.wavePattern.map((percentage, index) => (
+                  <NumberInput
+                    key={index}
+                    value={percentage}
+                    onChange={(value) => {
+                      const newPattern = [...progressionRules.wavePattern];
+                      newPattern[index] = parseInt(value) || 75;
+                      setProgressionRules((prev) => ({
+                        ...prev,
+                        wavePattern: newPattern,
+                      }));
+                    }}
+                    min={50}
+                    max={100}
+                    width="80px"
+                  >
+                    <NumberInputField />
+                  </NumberInput>
+                ))}
+              </HStack>
+              <Text fontSize="sm" color="gray.600" mt={2}>
+                Week 1: {progressionRules.wavePattern[0]}%, Week 2:{" "}
+                {progressionRules.wavePattern[1]}%, Week 3:{" "}
+                {progressionRules.wavePattern[2]}%, Week 4:{" "}
+                {progressionRules.wavePattern[3]}%
+              </Text>
+            </FormControl>
+          )}
+
+          <Divider my={4} />
+
+          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+            <FormControl>
+              <FormLabel>Deload Frequency (Every X Weeks)</FormLabel>
+              <NumberInput
+                value={progressionRules.deloadFrequency}
+                onChange={(value) =>
+                  setProgressionRules((prev) => ({
+                    ...prev,
+                    deloadFrequency: parseInt(value) || 4,
+                  }))
+                }
+                min={3}
+                max={8}
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+            </FormControl>
+
+            <FormControl>
+              <FormLabel>Deload Percentage (%)</FormLabel>
+              <NumberInput
+                value={progressionRules.deloadPercentage}
+                onChange={(value) =>
+                  setProgressionRules((prev) => ({
+                    ...prev,
+                    deloadPercentage: parseInt(value) || 80,
+                  }))
+                }
+                min={60}
+                max={90}
+              >
+                <NumberInputField />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+            </FormControl>
+          </SimpleGrid>
+
+          <FormControl mt={4}>
+            <HStack>
+              <Switch
+                isChecked={progressionRules.autoGenerate}
+                onChange={(e) =>
+                  setProgressionRules((prev) => ({
+                    ...prev,
+                    autoGenerate: e.target.checked,
+                  }))
+                }
+              />
+              <FormLabel mb={0}>
+                Auto-generate progression for all weeks
+              </FormLabel>
+            </HStack>
+            <Text fontSize="sm" color="gray.600" mt={1}>
+              Automatically apply progression rules to generate the complete
+              program
+            </Text>
+          </FormControl>
+        </Box>
+      )}
+    </VStack>
+  );
+
+  // Step 4: Week 1 Template Component
+  const renderStep4WeekOne = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Heading size="md" mb={4} color="teal.600">
+          Create Week 1 Template
+        </Heading>
+        <Text color="gray.600" mb={6}>
+          Design your first week of training. This will serve as the foundation
+          for the entire program.
+        </Text>
+      </Box>
+
+      <WeekTemplateEditor
+        weekData={weekOneTemplate}
+        weekNumber={1}
+        trainingStructure={trainingStructure}
+        onUpdate={setWeekOneTemplate}
+      />
+    </VStack>
+  );
+
+  // Week Template Editor Component
+  const WeekTemplateEditor = ({
+    weekData,
+    weekNumber,
+    trainingStructure,
+    onUpdate,
+  }) => {
+    const [selectedDay, setSelectedDay] = useState(1);
+    const [dayExercises, setDayExercises] = useState([]);
+
+    const addExercise = () => {
+      const newExercise = {
+        exercise: "",
+        target_sets: 3,
+        target_reps: 10,
+        target_weight_kg: null,
+        target_rpe: 7,
+        target_rest: 60,
+        load_prescription_p1RM: null,
+        focus: programOverview.Focus,
+        superset: "",
+        exercise_program_note: "",
+        exerciseDetails: null,
+      };
+      const updatedExercises = [...dayExercises, newExercise];
+      setDayExercises(updatedExercises);
+
+      // Update parent state immediately
+      const updatedWeek = {
+        ...weekData,
+        [selectedDay]: updatedExercises,
+      };
+      onUpdate(updatedWeek);
+    };
+
+    const updateExercise = (index, field, value) => {
+      const updated = [...dayExercises];
+      updated[index] = { ...updated[index], [field]: value };
+      setDayExercises(updated);
+
+      // Update parent state
+      const updatedWeek = {
+        ...weekData,
+        [selectedDay]: updated,
+      };
+      onUpdate(updatedWeek);
+    };
+
+    const handleExerciseSelect = (index, exerciseData) => {
+      const updated = [...dayExercises];
+      updated[index] = {
+        ...updated[index],
+        exercise: exerciseData.Exercise,
+        exerciseDetails: exerciseData,
+        // Auto-populate some fields based on exercise data
+        focus: exerciseData.Target_Muscle_Group || updated[index].focus,
+      };
+      setDayExercises(updated);
+
+      const updatedWeek = {
+        ...weekData,
+        [selectedDay]: updated,
+      };
+      onUpdate(updatedWeek);
+    };
+
+    const removeExercise = (index) => {
+      const updated = dayExercises.filter((_, i) => i !== index);
+      setDayExercises(updated);
+
+      const updatedWeek = {
+        ...weekData,
+        [selectedDay]: updated,
+      };
+      onUpdate(updatedWeek);
+    };
+
+    useEffect(() => {
+      setDayExercises(weekData[selectedDay] || []);
+    }, [selectedDay, weekData]);
+
+    return (
+      <Box>
+        <HStack mb={4}>
+          <Text fontWeight="semibold">Training Day:</Text>
+          {Array.from(
+            { length: trainingStructure.daysPerWeek },
+            (_, i) => i + 1
+          ).map((day) => (
+            <Button
+              key={day}
+              size="sm"
+              colorScheme={selectedDay === day ? "teal" : "gray"}
+              variant={selectedDay === day ? "solid" : "outline"}
+              onClick={() => setSelectedDay(day)}
+            >
+              Day {day}
+            </Button>
+          ))}
+        </HStack>
+
+        <Box p={4} border="1px solid" borderColor="gray.200" borderRadius="md">
+          <Flex justify="space-between" align="center" mb={4}>
+            <Text fontWeight="semibold">Day {selectedDay} Exercises</Text>
+            <Button
+              leftIcon={<AddIcon />}
+              size="sm"
+              colorScheme="teal"
+              onClick={addExercise}
+            >
+              Add Exercise
+            </Button>
+          </Flex>
+
+          {dayExercises.length === 0 ? (
+            <Box textAlign="center" py={8} bg="gray.50" borderRadius="md">
+              <Text color="gray.500" mb={2}>
+                No exercises added yet for Day {selectedDay}
+              </Text>
+              <Text fontSize="sm" color="gray.400">
+                Click "Add Exercise" to get started
+              </Text>
+            </Box>
+          ) : (
+            <VStack spacing={4} align="stretch">
+              {dayExercises.map((exercise, index) => (
+                <Box
+                  key={index}
+                  p={4}
+                  bg="gray.50"
+                  borderRadius="md"
+                  border="1px solid"
+                  borderColor="gray.200"
+                >
+                  <Grid
+                    templateColumns="repeat(auto-fit, minmax(200px, 1fr))"
+                    gap={3}
+                    mb={3}
+                  >
+                    <FormControl>
+                      <FormLabel fontSize="sm" fontWeight="semibold">
+                        Exercise *
+                      </FormLabel>
+                      <ExerciseSearchInput
+                        currentValue={exercise.exercise}
+                        onSelectExercise={(exerciseData) =>
+                          handleExerciseSelect(index, exerciseData)
+                        }
+                      />
+                    </FormControl>
+
+                    <FormControl>
+                      <FormLabel fontSize="sm">Sets</FormLabel>
+                      <NumberInput
+                        size="sm"
+                        value={exercise.target_sets}
+                        onChange={(value) =>
+                          updateExercise(
+                            index,
+                            "target_sets",
+                            parseInt(value) || 3
+                          )
+                        }
+                        min={1}
+                        max={10}
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+
+                    <FormControl>
+                      <FormLabel fontSize="sm">Reps</FormLabel>
+                      <NumberInput
+                        size="sm"
+                        value={exercise.target_reps}
+                        onChange={(value) =>
+                          updateExercise(
+                            index,
+                            "target_reps",
+                            parseInt(value) || 10
+                          )
+                        }
+                        min={1}
+                        max={50}
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                  </Grid>
+
+                  <Grid
+                    templateColumns="repeat(auto-fit, minmax(150px, 1fr))"
+                    gap={3}
+                    mb={3}
+                  >
+                    <FormControl>
+                      <FormLabel fontSize="sm">Weight (kg)</FormLabel>
+                      <NumberInput
+                        size="sm"
+                        value={exercise.target_weight_kg || ""}
+                        onChange={(value) =>
+                          updateExercise(
+                            index,
+                            "target_weight_kg",
+                            parseInt(value) || null
+                          )
+                        }
+                        min={0}
+                        precision={1}
+                        step={0.5}
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+
+                    <FormControl>
+                      <FormLabel fontSize="sm">RPE</FormLabel>
+                      <NumberInput
+                        size="sm"
+                        value={exercise.target_rpe}
+                        onChange={(value) =>
+                          updateExercise(
+                            index,
+                            "target_rpe",
+                            parseInt(value) || 7
+                          )
+                        }
+                        min={1}
+                        max={10}
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+
+                    <FormControl>
+                      <FormLabel fontSize="sm">Rest (seconds)</FormLabel>
+                      <NumberInput
+                        size="sm"
+                        value={exercise.target_rest}
+                        onChange={(value) =>
+                          updateExercise(
+                            index,
+                            "target_rest",
+                            parseInt(value) || 60
+                          )
+                        }
+                        min={30}
+                        max={300}
+                        step={15}
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+
+                    <FormControl>
+                      <FormLabel fontSize="sm">Load % 1RM</FormLabel>
+                      <NumberInput
+                        size="sm"
+                        value={exercise.load_prescription_p1RM || ""}
+                        onChange={(value) =>
+                          updateExercise(
+                            index,
+                            "load_prescription_p1RM",
+                            parseFloat(value) || null
+                          )
+                        }
+                        min={30}
+                        max={100}
+                        precision={1}
+                        step={2.5}
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                  </Grid>
+
+                  {/* Exercise Details Preview */}
+                  {exercise.exerciseDetails && (
+                    <Box p={3} bg="blue.50" borderRadius="md" mb={3}>
+                      <HStack justify="space-between" mb={2}>
+                        <Text fontSize="sm" fontWeight="semibold">
+                          Exercise Details:
+                        </Text>
+                        {(exercise.exerciseDetails.Favorite === "Yes" ||
+                          exercise.exerciseDetails.Favorite === "Y") && (
+                          <Badge colorScheme="yellow" size="sm">
+                            ⭐ Favorite
+                          </Badge>
+                        )}
+                      </HStack>
+                      <SimpleGrid
+                        columns={{ base: 1, md: 2 }}
+                        spacing={2}
+                        fontSize="xs"
+                      >
+                        {exercise.exerciseDetails.Target_Muscle_Group && (
+                          <Text>
+                            <strong>Target:</strong>{" "}
+                            {exercise.exerciseDetails.Target_Muscle_Group}
+                          </Text>
+                        )}
+                        {exercise.exerciseDetails.Primary_Equipment && (
+                          <Text>
+                            <strong>Equipment:</strong>{" "}
+                            {exercise.exerciseDetails.Primary_Equipment}
+                          </Text>
+                        )}
+                        {exercise.exerciseDetails["1_RM_Alex"] && (
+                          <Text>
+                            <strong>1RM:</strong>{" "}
+                            {exercise.exerciseDetails["1_RM_Alex"]}kg
+                          </Text>
+                        )}
+                        {exercise.exerciseDetails.Difficulty_Level && (
+                          <Text>
+                            <strong>Difficulty:</strong>{" "}
+                            {exercise.exerciseDetails.Difficulty_Level}
+                          </Text>
+                        )}
+                      </SimpleGrid>
+                    </Box>
+                  )}
+
+                  <Flex justify="space-between" align="center">
+                    <FormControl width="200px">
+                      <FormLabel fontSize="sm">Exercise Notes</FormLabel>
+                      <Input
+                        size="sm"
+                        value={exercise.exercise_program_note || ""}
+                        onChange={(e) =>
+                          updateExercise(
+                            index,
+                            "exercise_program_note",
+                            e.target.value
+                          )
+                        }
+                        placeholder="Optional notes..."
+                      />
+                    </FormControl>
+
+                    <IconButton
+                      icon={<DeleteIcon />}
+                      size="sm"
+                      colorScheme="red"
+                      variant="ghost"
+                      onClick={() => removeExercise(index)}
+                      aria-label="Remove exercise"
+                    />
+                  </Flex>
+                </Box>
+              ))}
+            </VStack>
+          )}
+        </Box>
+      </Box>
+    );
+  };
+
+  // Step 5: Auto-Generate Program Component
+  const renderStep5Generate = () => {
+    const generateProgram = () => {
+      if (!weekOneTemplate || Object.keys(weekOneTemplate).length === 0) {
+        setError(
+          "Please create a Week 1 template before generating the program"
+        );
+        return;
+      }
+
+      const totalWeeks = programOverview.Program_Length_in_Weeks || 4;
+      const generated = {};
+
+      for (let week = 1; week <= totalWeeks; week++) {
+        generated[week] = {};
+
+        // Check if it's a deload week
+        const isDeloadWeek = week % progressionRules.deloadFrequency === 0;
+
+        Object.keys(weekOneTemplate).forEach((day) => {
+          const dayNumber = parseInt(day);
+          generated[week][dayNumber] = weekOneTemplate[day].map((exercise) => {
+            const generatedExercise = { ...exercise };
+
+            if (isDeloadWeek) {
+              // Apply deload
+              generatedExercise.target_weight_kg = exercise.target_weight_kg
+                ? Math.round(
+                    exercise.target_weight_kg *
+                      (progressionRules.deloadPercentage / 100)
+                  )
+                : exercise.target_weight_kg;
+              generatedExercise.target_rpe = Math.max(
+                1,
+                exercise.target_rpe - 2
+              );
+              generatedExercise.load_prescription_p1RM =
+                exercise.load_prescription_p1RM
+                  ? exercise.load_prescription_p1RM *
+                    (progressionRules.deloadPercentage / 100)
+                  : exercise.load_prescription_p1RM;
+            } else {
+              // Apply progression based on type
+              switch (progressionRules.type) {
+                case "linear":
+                  generatedExercise.target_weight_kg = exercise.target_weight_kg
+                    ? exercise.target_weight_kg +
+                      progressionRules.weightProgression * (week - 1)
+                    : exercise.target_weight_kg;
+                  break;
+
+                case "double":
+                  // For double progression, increase reps first, then weight
+                  const repIncrease = Math.min(
+                    progressionRules.repProgression * (week - 1),
+                    5
+                  );
+                  generatedExercise.target_reps =
+                    exercise.target_reps + repIncrease;
+
+                  if (repIncrease >= 5) {
+                    generatedExercise.target_weight_kg =
+                      exercise.target_weight_kg
+                        ? exercise.target_weight_kg +
+                          progressionRules.weightProgression
+                        : exercise.target_weight_kg;
+                    generatedExercise.target_reps = exercise.target_reps; // Reset reps
+                  }
+                  break;
+
+                case "percentage":
+                  const percentageMultiplier =
+                    1 +
+                    (progressionRules.percentageIncrease / 100) * (week - 1);
+                  generatedExercise.target_weight_kg = exercise.target_weight_kg
+                    ? Math.round(
+                        exercise.target_weight_kg * percentageMultiplier
+                      )
+                    : exercise.target_weight_kg;
+                  generatedExercise.load_prescription_p1RM =
+                    exercise.load_prescription_p1RM
+                      ? Math.min(
+                          100,
+                          exercise.load_prescription_p1RM * percentageMultiplier
+                        )
+                      : exercise.load_prescription_p1RM;
+                  break;
+
+                case "wave":
+                  const waveIndex =
+                    (week - 1) % progressionRules.wavePattern.length;
+                  const wavePercentage =
+                    progressionRules.wavePattern[waveIndex];
+                  generatedExercise.load_prescription_p1RM = wavePercentage;
+                  break;
+
+                case "block":
+                  const blockNumber = Math.ceil(
+                    week / progressionRules.blockLength
+                  );
+                  const blockMultiplier = 1 + 0.05 * (blockNumber - 1); // 5% increase per block
+                  generatedExercise.target_weight_kg = exercise.target_weight_kg
+                    ? Math.round(exercise.target_weight_kg * blockMultiplier)
+                    : exercise.target_weight_kg;
+                  break;
+
+                default:
+                  break;
+              }
+            }
+
+            return generatedExercise;
+          });
+        });
+      }
+
+      setGeneratedProgram(generated);
+      setSuccessMessage("Program generated successfully!");
+      setTimeout(() => setSuccessMessage(null), 3000);
+    };
+
+    return (
+      <VStack spacing={6} align="stretch">
+        <Box>
+          <Heading size="md" mb={4} color="teal.600">
+            Auto-Generate Complete Program
+          </Heading>
+          <Text color="gray.600" mb={6}>
+            Generate the complete program based on your Week 1 template and
+            progression rules.
+          </Text>
+        </Box>
+
+        <Box p={4} bg="blue.50" borderRadius="md">
+          <Text fontWeight="semibold" mb={2}>
+            Generation Preview:
+          </Text>
+          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+            <VStack align="start" spacing={1}>
+              <Text fontSize="sm">
+                <strong>Total Weeks:</strong>{" "}
+                {programOverview.Program_Length_in_Weeks}
+              </Text>
+              <Text fontSize="sm">
+                <strong>Progression Type:</strong> {progressionRules.type}
+              </Text>
+              <Text fontSize="sm">
+                <strong>Training Days:</strong> {trainingStructure.daysPerWeek}{" "}
+                per week
+              </Text>
+            </VStack>
+            <VStack align="start" spacing={1}>
+              <Text fontSize="sm">
+                <strong>Deload Every:</strong>{" "}
+                {progressionRules.deloadFrequency} weeks
+              </Text>
+              <Text fontSize="sm">
+                <strong>Week 1 Exercises:</strong>{" "}
+                {Object.values(weekOneTemplate).flat().length}
+              </Text>
+              <Text fontSize="sm">
+                <strong>Total Exercises:</strong>{" "}
+                {Object.values(weekOneTemplate).flat().length *
+                  programOverview.Program_Length_in_Weeks}
+              </Text>
+            </VStack>
+          </SimpleGrid>
+        </Box>
+
+        <Button
+          colorScheme="teal"
+          size="lg"
+          onClick={generateProgram}
+          isDisabled={
+            !weekOneTemplate || Object.keys(weekOneTemplate).length === 0
+          }
+        >
+          Generate Complete Program
+        </Button>
+
+        {Object.keys(generatedProgram).length > 0 && (
+          <Box>
+            <Text fontWeight="semibold" mb={4}>
+              Generated Program Preview:
+            </Text>
+            <Accordion allowMultiple>
+              {Object.entries(generatedProgram)
+                .slice(0, 3)
+                .map(([week, weekData]) => (
+                  <AccordionItem key={week}>
+                    <AccordionButton>
+                      <Box flex="1" textAlign="left">
+                        <Text fontWeight="semibold">Week {week}</Text>
+                        <Text fontSize="sm" color="gray.600">
+                          {week % progressionRules.deloadFrequency === 0
+                            ? "Deload Week"
+                            : "Training Week"}
+                        </Text>
+                      </Box>
+                      <AccordionIcon />
+                    </AccordionButton>
+                    <AccordionPanel pb={4}>
+                      {Object.entries(weekData).map(([day, exercises]) => (
+                        <Box key={day} mb={4}>
+                          <Text fontWeight="semibold" mb={2}>
+                            Day {day}:
+                          </Text>
+                          <VStack align="start" spacing={1}>
+                            {exercises.map((exercise, idx) => (
+                              <Text key={idx} fontSize="sm">
+                                • {exercise.exercise || "Exercise"} -{" "}
+                                {exercise.target_sets}x{exercise.target_reps}
+                                {exercise.target_weight_kg &&
+                                  ` @ ${exercise.target_weight_kg}kg`}
+                                {exercise.target_rpe &&
+                                  ` RPE ${exercise.target_rpe}`}
+                              </Text>
+                            ))}
+                          </VStack>
+                        </Box>
+                      ))}
+                    </AccordionPanel>
+                  </AccordionItem>
+                ))}
+              {Object.keys(generatedProgram).length > 3 && (
+                <Text fontSize="sm" color="gray.600" textAlign="center" mt={2}>
+                  ... and {Object.keys(generatedProgram).length - 3} more weeks
+                </Text>
+              )}
+            </Accordion>
+          </Box>
+        )}
+      </VStack>
+    );
+  };
+
+  // Step 6: Fine-tuning Component
+  const renderStep6FineTune = () => {
+    const [selectedWeek, setSelectedWeek] = useState(1);
+    const [selectedDay, setSelectedDay] = useState(1);
+
+    const updateGeneratedExercise = (
+      week,
+      day,
+      exerciseIndex,
+      field,
+      value
+    ) => {
+      const updated = { ...generatedProgram };
+      if (!updated[week]) updated[week] = {};
+      if (!updated[week][day]) updated[week][day] = [];
+
+      updated[week][day][exerciseIndex] = {
+        ...updated[week][day][exerciseIndex],
+        [field]: value,
+      };
+
+      setGeneratedProgram(updated);
+    };
+
+    const addCustomExercise = (week, day) => {
+      const updated = { ...generatedProgram };
+      if (!updated[week]) updated[week] = {};
+      if (!updated[week][day]) updated[week][day] = [];
+
+      updated[week][day].push({
+        exercise: "",
+        target_sets: 3,
+        target_reps: 10,
+        target_weight_kg: null,
+        target_rpe: 7,
+        target_rest: 60,
+        load_prescription_p1RM: null,
+        focus: programOverview.Focus,
+      });
+
+      setGeneratedProgram(updated);
+    };
+
+    return (
+      <VStack spacing={6} align="stretch">
+        <Box>
+          <Heading size="md" mb={4} color="teal.600">
+            Fine-tune Your Program
+          </Heading>
+          <Text color="gray.600" mb={6}>
+            Make final adjustments to individual weeks and exercises before
+            saving.
+          </Text>
+        </Box>
+
+        <HStack spacing={4} wrap="wrap">
+          <FormControl width="150px">
+            <FormLabel>Week</FormLabel>
+            <Select
+              value={selectedWeek}
+              onChange={(e) => setSelectedWeek(parseInt(e.target.value))}
+            >
+              {Object.keys(generatedProgram).map((week) => (
+                <option key={week} value={week}>
+                  Week {week}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl width="150px">
+            <FormLabel>Day</FormLabel>
+            <Select
+              value={selectedDay}
+              onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+            >
+              {generatedProgram[selectedWeek] &&
+                Object.keys(generatedProgram[selectedWeek]).map((day) => (
+                  <option key={day} value={day}>
+                    Day {day}
+                  </option>
+                ))}
+            </Select>
+          </FormControl>
+        </HStack>
+
+        {generatedProgram[selectedWeek] &&
+          generatedProgram[selectedWeek][selectedDay] && (
+            <Box
+              p={4}
+              border="1px solid"
+              borderColor="gray.200"
+              borderRadius="md"
+            >
+              <Flex justify="space-between" align="center" mb={4}>
+                <Text fontWeight="semibold">
+                  Week {selectedWeek}, Day {selectedDay} Exercises
+                </Text>
+                <Button
+                  leftIcon={<AddIcon />}
+                  size="sm"
+                  colorScheme="teal"
+                  onClick={() => addCustomExercise(selectedWeek, selectedDay)}
+                >
+                  Add Exercise
+                </Button>
+              </Flex>
+
+              <VStack spacing={4} align="stretch">
+                {generatedProgram[selectedWeek][selectedDay].map(
+                  (exercise, index) => (
+                    <Box key={index} p={4} bg="gray.50" borderRadius="md">
+                      <Grid
+                        templateColumns="repeat(auto-fit, minmax(150px, 1fr))"
+                        gap={3}
+                      >
+                        <FormControl>
+                          <FormLabel fontSize="sm">Exercise</FormLabel>
+                          <Input
+                            size="sm"
+                            value={exercise.exercise}
+                            onChange={(e) =>
+                              updateGeneratedExercise(
+                                selectedWeek,
+                                selectedDay,
+                                index,
+                                "exercise",
+                                e.target.value
+                              )
+                            }
+                          />
+                        </FormControl>
+
+                        <FormControl>
+                          <FormLabel fontSize="sm">Sets</FormLabel>
+                          <NumberInput
+                            size="sm"
+                            value={exercise.target_sets}
+                            onChange={(value) =>
+                              updateGeneratedExercise(
+                                selectedWeek,
+                                selectedDay,
+                                index,
+                                "target_sets",
+                                parseInt(value) || 3
+                              )
+                            }
+                            min={1}
+                            max={10}
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        </FormControl>
+
+                        <FormControl>
+                          <FormLabel fontSize="sm">Reps</FormLabel>
+                          <NumberInput
+                            size="sm"
+                            value={exercise.target_reps}
+                            onChange={(value) =>
+                              updateGeneratedExercise(
+                                selectedWeek,
+                                selectedDay,
+                                index,
+                                "target_reps",
+                                parseInt(value) || 10
+                              )
+                            }
+                            min={1}
+                            max={50}
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        </FormControl>
+
+                        <FormControl>
+                          <FormLabel fontSize="sm">Weight (kg)</FormLabel>
+                          <NumberInput
+                            size="sm"
+                            value={exercise.target_weight_kg || ""}
+                            onChange={(value) =>
+                              updateGeneratedExercise(
+                                selectedWeek,
+                                selectedDay,
+                                index,
+                                "target_weight_kg",
+                                parseInt(value) || null
+                              )
+                            }
+                            min={0}
+                            precision={1}
+                            step={0.5}
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        </FormControl>
+
+                        <FormControl>
+                          <FormLabel fontSize="sm">RPE</FormLabel>
+                          <NumberInput
+                            size="sm"
+                            value={exercise.target_rpe}
+                            onChange={(value) =>
+                              updateGeneratedExercise(
+                                selectedWeek,
+                                selectedDay,
+                                index,
+                                "target_rpe",
+                                parseInt(value) || 7
+                              )
+                            }
+                            min={1}
+                            max={10}
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        </FormControl>
+
+                        <FormControl>
+                          <FormLabel fontSize="sm">Load % 1RM</FormLabel>
+                          <NumberInput
+                            size="sm"
+                            value={exercise.load_prescription_p1RM || ""}
+                            onChange={(value) =>
+                              updateGeneratedExercise(
+                                selectedWeek,
+                                selectedDay,
+                                index,
+                                "load_prescription_p1RM",
+                                parseFloat(value) || null
+                              )
+                            }
+                            min={30}
+                            max={100}
+                            precision={1}
+                            step={2.5}
+                          >
+                            <NumberInputField />
+                            <NumberInputStepper>
+                              <NumberIncrementStepper />
+                              <NumberDecrementStepper />
+                            </NumberInputStepper>
+                          </NumberInput>
+                        </FormControl>
+                      </Grid>
+                    </Box>
+                  )
+                )}
+              </VStack>
+            </Box>
+          )}
+      </VStack>
+    );
+  };
+
+  // Program Creation Wizard Component
+  const ProgramCreationWizard = () => {
+    const renderStepContent = (step) => {
+      switch (step) {
+        case 0:
+          return renderStep1Goals();
+        case 1:
+          return renderStep2Structure();
+        case 2:
+          return renderStep3Progression();
+        case 3:
+          return renderStep4WeekOne();
+        case 4:
+          return renderStep5Generate();
+        case 5:
+          return renderStep6FineTune();
+        default:
+          return renderStep1Goals();
+      }
+    };
+
+    const nextStep = () => {
+      if (programCreationStep < steps.length - 1) {
+        setProgramCreationStep(programCreationStep + 1);
+        setActiveStep(programCreationStep + 1);
+      }
+    };
+
+    const prevStep = () => {
+      if (programCreationStep > 0) {
+        setProgramCreationStep(programCreationStep - 1);
+        setActiveStep(programCreationStep - 1);
+      }
+    };
+
+    const canProceed = () => {
+      switch (programCreationStep) {
+        case 0:
+          return (
+            programOverview.Program_Name &&
+            programOverview.Level &&
+            programOverview.Focus &&
+            programOverview.Program_Length_in_Weeks
+          );
+        case 1:
+          return trainingStructure.type;
+        case 2:
+          return progressionRules.type;
+        case 3:
+          return Object.keys(weekOneTemplate).length > 0;
+        case 4:
+          return Object.keys(generatedProgram).length > 0;
+        case 5:
+          return true;
+        default:
+          return false;
+      }
+    };
+
+    return (
+      <Box>
+        <Stepper index={activeStep} mb={8} colorScheme="teal">
+          {steps.map((step, index) => (
+            <Step key={index}>
+              <StepIndicator>
+                <StepStatus
+                  complete={<StepIcon />}
+                  incomplete={<StepNumber />}
+                  active={<StepNumber />}
+                />
+              </StepIndicator>
+              <Box flexShrink="0">
+                <StepTitle>{step.title}</StepTitle>
+                <StepDescription>{step.description}</StepDescription>
+              </Box>
+              <StepSeparator />
+            </Step>
+          ))}
+        </Stepper>
+
+        <Box minH="500px">{renderStepContent(programCreationStep)}</Box>
+
+        <Flex justify="space-between" mt={8}>
+          <Button
+            onClick={prevStep}
+            isDisabled={programCreationStep === 0}
+            variant="outline"
+          >
+            Previous
+          </Button>
+
+          <HStack>
+            <Text fontSize="sm" color="gray.600">
+              Step {programCreationStep + 1} of {steps.length}
+            </Text>
+          </HStack>
+
+          {programCreationStep === steps.length - 1 ? (
+            <Button
+              colorScheme="green"
+              onClick={saveCompleteProgram}
+              isLoading={loading}
+              loadingText="Saving..."
+            >
+              Save Program
+            </Button>
+          ) : (
+            <Button
+              colorScheme="teal"
+              onClick={nextStep}
+              isDisabled={!canProceed()}
+            >
+              Next
+            </Button>
+          )}
+        </Flex>
+      </Box>
+    );
+  };
+
+  // Save complete program to database
+  const saveCompleteProgram = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setError("You must be logged in to save programs");
+        return;
+      }
+
+      const programId = editingProgram?.Program_ID || `program_${Date.now()}`;
+      const userId = session.user.id;
+
+      // Step 1: Save program overview
+      const overviewData = {
+        Program_ID: programId,
+        Program_Name: programOverview.Program_Name,
+        Created: new Date().toISOString(),
+        Program_Description: programOverview.Program_Description,
+        Level: programOverview.Level,
+        Focus: programOverview.Focus,
+        Key_Training_Focus: programOverview.Key_Training_Focus,
+        Nutrition_Recovery: programOverview.Nutrition_Recovery,
+        Training_Mix_Frequency: programOverview.Training_Mix_Frequency,
+        Key_Adaptations: programOverview.Key_Adaptations,
+        Key_Assessments: programOverview.Key_Assessments,
+        Key_Assessment_Goals: programOverview.Key_Assessment_Goals,
+        Program_Macro_Cycle: programOverview.Program_Macro_Cycle,
+        Weeks: programOverview.Weeks,
+        Prefered_Season: programOverview.Prefered_Season,
+        Program_Length_in_Weeks: programOverview.Program_Length_in_Weeks,
+        Days_Per_Week: programOverview.Days_Per_Week,
+        Time_Per_Workout: programOverview.Time_Per_Workout,
+        Equipment: programOverview.Equipment,
+        MUSCLE_ENGAGEMENT: programOverview.MUSCLE_ENGAGEMENT,
+        Deload_Week: progressionRules.deloadFrequency.toString(),
+        Progression: JSON.stringify(progressionRules),
+        user_id: userId,
+      };
+
+      const { error: overviewError } = await supabase
+        .from("program_overview")
+        .upsert(overviewData);
+
+      if (overviewError) throw overviewError;
+
+      // Step 2: Delete existing exercises if updating
+      if (editingProgram) {
+        const { error: deleteError } = await supabase
+          .from("program_library")
+          .delete()
+          .eq("program_id", programId);
+
+        if (deleteError) throw deleteError;
+      }
+
+      // Step 3: Save all exercises
+      const allExercises = [];
+
+      Object.keys(generatedProgram).forEach((week) => {
+        Object.keys(generatedProgram[week]).forEach((day) => {
+          generatedProgram[week][day].forEach((exercise) => {
+            allExercises.push({
+              program_name: programOverview.Program_Name,
+              program_macro_cycle: programOverview.Program_Macro_Cycle || "",
+              week: parseInt(week),
+              day: parseInt(day),
+              focus: exercise.focus || programOverview.Focus,
+              exercise: exercise.exercise,
+              exercise_program_note: exercise.exercise_program_note || "",
+              superset: exercise.superset || "",
+              target_sets: exercise.target_sets,
+              target_reps: exercise.target_reps,
+              target_rpe: exercise.target_rpe,
+              target_rest: exercise.target_rest,
+              target_tempo: exercise.target_tempo || "",
+              target_time_distance: exercise.target_time_distance || "",
+              program_id: programId,
+              target_weight_kg: exercise.target_weight_kg,
+              load_prescription_p1RM: exercise.load_prescription_p1RM,
+              user_id: userId,
+            });
+          });
+        });
+      });
+
+      if (allExercises.length > 0) {
+        const { error: exerciseError } = await supabase
+          .from("program_library")
+          .insert(allExercises);
+
+        if (exerciseError) throw exerciseError;
+      }
+
+      setSuccessMessage(
+        `Program "${programOverview.Program_Name}" saved successfully with ${allExercises.length} exercises!`
+      );
+
+      // Reset and refresh
+      resetProgramCreation();
+      onProgramModalClose();
+      await fetchPrograms();
+    } catch (err) {
+      console.error("Error saving complete program:", err);
+      setError(err.message || "Failed to save program");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Reset program creation state
+  const resetProgramCreation = () => {
+    setProgramCreationStep(0);
+    setActiveStep(0);
+    setProgramOverview({
+      Program_Name: "",
+      Program_Description: "",
+      Level: "",
+      Focus: "",
+      Key_Training_Focus: "",
+      Nutrition_Recovery: "",
+      Training_Mix_Frequency: "",
+      Key_Adaptations: "",
+      Key_Assessments: "",
+      Key_Assessment_Goals: "",
+      Program_Macro_Cycle: "",
+      Weeks: "",
+      Prefered_Season: "",
+      Program_Length_in_Weeks: null,
+      Days_Per_Week: "",
+      Time_Per_Workout: "",
+      Equipment: "",
+      MUSCLE_ENGAGEMENT: "",
+      Deload_Week: "",
+      Progression: "",
+      user_id: null,
+    });
+    setTrainingStructure({
+      type: "",
+      daysPerWeek: 3,
+      sessionsPerDay: 1,
+      customStructure: {},
+    });
+    setProgressionRules({
+      type: "linear",
+      weightProgression: 2.5,
+      repProgression: 1,
+      percentageIncrease: 2.5,
+      deloadFrequency: 4,
+      deloadPercentage: 80,
+      blockLength: 4,
+      wavePattern: [75, 80, 85, 90],
+      autoGenerate: true,
+    });
+    setWeekOneTemplate({});
+    setGeneratedProgram({});
+    setFineTuning({
+      modifiedWeeks: {},
+      customExercises: {},
+    });
+  };
+
+  // Start creating new program
+  const startCreatingProgram = () => {
+    setEditingProgram(null);
+    setIsCreatingProgram(true);
+    resetProgramCreation();
+    onProgramModalOpen();
+  };
+
+  // Group exercises by week and day for display
+  const groupExercisesByWeekAndDay = (exercises) => {
+    const grouped = {};
+    exercises.forEach((exercise) => {
+      const key = `Week ${exercise.week}, Day ${exercise.day}`;
+      if (!grouped[key]) {
+        grouped[key] = [];
+      }
+      grouped[key].push(exercise);
+    });
+    return grouped;
   };
 
   // Navigate back to Dashboard
@@ -191,1373 +3197,897 @@ function WorkoutPrograms() {
     navigate("/");
   };
 
-  // Handle enrollment or switching programs
-  const enrollInProgram = async (programId) => {
-    try {
-      setLoading(true);
-      setError(null);
-      setEnrollmentStatus(null);
-
-      // Check if there is an active session
-      const { data: sessionData, error: sessionError } =
-        await supabase.auth.getSession();
-
-      if (sessionError) {
-        console.error("Error fetching session data:", sessionError);
-        throw new Error(
-          `Failed to fetch session data: ${
-            sessionError.message || "Unknown error"
-          }`
-        );
-      }
-
-      if (!sessionData?.session) {
-        throw new Error(
-          "User not authenticated. Please log in to enroll in a program."
-        );
-      }
-
-      const userId = sessionData.session.user.id;
-      if (!userId) {
-        throw new Error("User ID not found in session. Please log in again.");
-      }
-
-      // Check if user already has an enrollment record in user_programs
-      const { data: existingEnrollment, error: checkError } = await supabase
-        .from("user_programs")
-        .select("id, program_id")
-        .eq("user_id", userId)
-        .limit(1);
-
-      if (checkError) {
-        console.error("Error checking existing enrollment:", checkError);
-        throw new Error(
-          `Failed to check enrollment: ${checkError.message || "Unknown error"}`
-        );
-      }
-
-      const selectedProgram = programsOverview.find(
-        (p) => p.Program_ID === programId
-      );
-      const programName = selectedProgram
-        ? selectedProgram.Program_Name
-        : "Unknown Program";
-
-      if (existingEnrollment && existingEnrollment.length > 0) {
-        // Update existing enrollment record (switching programs)
-        const { error: updateError } = await supabase
-          .from("user_programs")
-          .update({
-            program_id: programId,
-            enrolled_at: new Date().toISOString(),
-          })
-          .eq("user_id", userId);
-
-        if (updateError) {
-          console.error("Error updating enrollment:", updateError);
-          throw new Error(
-            `Failed to switch program: ${
-              updateError.message || "Unknown error"
-            }`
-          );
-        }
-
-        setEnrollmentStatus(`Successfully switched to program: ${programName}`);
-      } else {
-        // Insert new enrollment record
-        const { error: insertError } = await supabase
-          .from("user_programs")
-          .insert([
-            {
-              user_id: userId,
-              program_id: programId,
-              enrolled_at: new Date().toISOString(),
-            },
-          ]);
-
-        if (insertError) {
-          console.error("Error inserting enrollment:", insertError);
-          throw new Error(
-            `Failed to enroll in program: ${
-              insertError.message || "Unknown error"
-            }`
-          );
-        }
-
-        setEnrollmentStatus(`Successfully enrolled in program: ${programName}`);
-      }
-    } catch (err) {
-      console.error("Error in enrollInProgram:", err);
-      setError(err.message || "Failed to enroll in program");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle adding or updating a program
-  const saveProgram = async () => {
+  // Delete program
+  const deleteProgram = async (programId) => {
     try {
       setLoading(true);
       setError(null);
 
-      let programId;
-
-      if (isEditing && selectedProgram) {
-        // Update existing program in program_overview
-        const { error: overviewError } = await supabase
-          .from("program_overview")
-          .update(newProgram)
-          .eq("Program_ID", selectedProgram.Program_ID);
-
-        if (overviewError) {
-          console.error("Error updating program_overview:", overviewError);
-          throw new Error(
-            `Failed to update program: ${
-              overviewError.message || "Unknown error"
-            }`
-          );
-        }
-
-        programId = selectedProgram.Program_ID;
-
-        // Delete existing program_library entries for this program before adding updated ones
-        const { error: deleteError } = await supabase
-          .from("program_library")
-          .delete()
-          .eq("program_id", programId);
-
-        if (deleteError) {
-          console.error("Error deleting program_library entries:", deleteError);
-          throw new Error(
-            `Failed to delete old library entries: ${
-              deleteError.message || "Unknown error"
-            }`
-          );
-        }
-      } else {
-        // Insert new program into program_overview
-        const { data: overviewData, error: overviewError } = await supabase
-          .from("program_overview")
-          .insert([newProgram])
-          .select("Program_ID")
-          .single();
-
-        if (overviewError) {
-          console.error(
-            "Error inserting into program_overview:",
-            overviewError
-          );
-          throw new Error(
-            `Failed to insert new program: ${
-              overviewError.message || "Unknown error"
-            }`
-          );
-        }
-
-        programId = overviewData.Program_ID;
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setError("You must be logged in to delete a program");
+        return;
       }
 
-      // Insert or update weekly plan details into program_library
-      if (weeklyPlan.length > 0) {
-        const libraryInserts = weeklyPlan.map((plan) => ({
-          program_id: programId,
-          program_name: newProgram.Program_Name,
-          program_macro_cycle: newProgram.Program_Macro_Cycle || "",
-          week: plan.week,
-          day: plan.day,
-          focus: plan.focus,
-          exercise: plan.exercise,
-          target_sets: plan.target_sets || "",
-          target_reps: plan.target_reps || "",
-          load_prescription_p1RM: plan.load_prescription_p1RM || "",
-          target_rpe: plan.target_rpe || "",
-          target_rest: plan.target_rest || "",
-          target_tempo: plan.target_tempo || "",
-          target_time_distance: plan.target_time_distance || "",
-        }));
-
-        const { error: libraryError } = await supabase
-          .from("program_library")
-          .insert(libraryInserts);
-
-        if (libraryError) {
-          console.error("Error inserting into program_library:", libraryError);
-          throw new Error(
-            `Failed to insert library entries: ${
-              libraryError.message || "Unknown error"
-            }`
-          );
-        }
-      }
-
-      // Refresh data after insertion/update
-      const { data: newOverviewData, error: newOverviewError } = await supabase
-        .from("program_overview")
-        .select(
-          "Program_ID, Program_Name, Created, Program_Description, Level, Focus, Key_Training_Focus, Nutrition_Recovery, Training_Mix_Frequency, Key_Adaptations, Key_Assessments, Key_Assessment_Goals, Program_Macro_Cycle, Weeks, Prefered_Season, Program_Length_in_Weeks, Days_Per_Week, Time_Per_Workout, Equipment, MUSCLE_ENGAGEMENT, Deload_Week, Progression"
-        );
-
-      if (newOverviewError) {
-        console.error("Error refreshing program_overview:", newOverviewError);
-        throw new Error(
-          `Failed to refresh overview data: ${
-            newOverviewError.message || "Unknown error"
-          }`
-        );
-      }
-
-      const { data: newLibraryData, error: newLibraryError } = await supabase
+      // Delete exercises first
+      const { error: exerciseError } = await supabase
         .from("program_library")
-        .select(
-          "program_id, program_name, program_macro_cycle, week, day, focus, target_sets, target_reps, load_prescription_p1RM, target_rpe, target_rest, target_tempo, target_time_distance, exercise"
-        );
+        .delete()
+        .eq("program_id", programId);
 
-      if (newLibraryError) {
-        console.error("Error refreshing program_library:", newLibraryError);
-        throw new Error(
-          `Failed to refresh library data: ${
-            newLibraryError.message || "Unknown error"
-          }`
-        );
-      }
+      if (exerciseError) throw exerciseError;
 
-      setProgramsOverview(newOverviewData || []);
-      setProgramsLibrary(newLibraryData || []);
-      setShowAddProgramModal(false);
-      setIsEditing(false);
-      setNewProgram({
-        Program_Name: "",
-        Program_Description: "",
-        Level: "",
-        Focus: "",
-        Key_Training_Focus: "",
-        Nutrition_Recovery: "",
-        Training_Mix_Frequency: "",
-        Key_Adaptations: "",
-        Key_Assessments: "",
-        Key_Assessment_Goals: "",
-        Program_Macro_Cycle: "",
-        Weeks: "",
-        Prefered_Season: "",
-        Program_Length_in_Weeks: "",
-        Days_Per_Week: "",
-        Time_Per_Workout: "",
-        Equipment: "",
-        MUSCLE_ENGAGEMENT: "",
-        Deload_Week: "",
-        Progression: "",
-      });
-      setWeeklyPlan([]);
+      // Delete program overview
+      const { error: overviewError } = await supabase
+        .from("program_overview")
+        .delete()
+        .eq("Program_ID", programId);
+
+      if (overviewError) throw overviewError;
+
+      setSuccessMessage("Program deleted successfully!");
+      setTimeout(() => setSuccessMessage(null), 3000);
+
+      onDeleteModalClose();
+      await fetchPrograms();
     } catch (err) {
-      console.error("Error in saveProgram:", err);
-      setError(err.message || "Failed to save program");
+      console.error("Error deleting program:", err);
+      setError(err.message || "Failed to delete program");
     } finally {
       setLoading(false);
     }
   };
 
-  // Handle adding a new day to the weekly plan
-  const addDayToPlan = () => {
-    if (editingDayIndex !== null) {
-      // Update existing day entry
-      const updatedPlan = [...weeklyPlan];
-      updatedPlan[editingDayIndex] = { ...newDay };
-      setWeeklyPlan(updatedPlan);
-      setEditingDayIndex(null);
-    } else {
-      // Add new day entry
-      setWeeklyPlan([...weeklyPlan, { ...newDay }]);
+  // Unenroll from program
+  const unenrollFromProgram = async (programId) => {
+    try {
+      setEnrolling(programId);
+      setError(null);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        setError("You must be logged in to unenroll from a program");
+        return;
+      }
+
+      const { error } = await supabase
+        .from("user_programs")
+        .delete()
+        .eq("user_id", session.user.id)
+        .eq("program_id", programId);
+
+      if (error) throw error;
+
+      setSuccessMessage("Successfully unenrolled from program!");
+      setTimeout(() => setSuccessMessage(null), 3000);
+
+      await fetchUserEnrollments();
+    } catch (err) {
+      console.error("Error unenrolling from program:", err);
+      setError(err.message || "Failed to unenroll from program");
+    } finally {
+      setEnrolling(null);
     }
-    setNewDay({
-      week: newDay.week,
-      day: newDay.day + 1,
-      focus: "",
-      exercise: "",
-      target_sets: "",
-      target_reps: "",
-      load_prescription_p1RM: "",
-      target_rpe: "",
-      target_rest: "",
-      target_tempo: "",
-      target_time_distance: "",
-    });
   };
 
-  // Handle editing an existing day in the weekly plan
-  const editDayInPlan = (index) => {
-    const dayToEdit = weeklyPlan[index];
-    setNewDay({ ...dayToEdit });
-    setEditingDayIndex(index);
-  };
+  // Export program data
+  const exportProgramData = (program) => {
+    const csvData = program.exercises.map((exercise) => ({
+      Program: program.Program_Name,
+      Week: exercise.week,
+      Day: exercise.day,
+      Exercise: exercise.exercise,
+      Sets: exercise.target_sets,
+      Reps: exercise.target_reps,
+      Weight: exercise.target_weight_kg,
+      RPE: exercise.target_rpe,
+      Rest: exercise.target_rest,
+      Focus: exercise.focus,
+      Load_1RM: exercise.load_prescription_p1RM,
+    }));
 
-  // Handle deleting a day from the weekly plan
-  const deleteDayFromPlan = (index) => {
-    const updatedPlan = weeklyPlan.filter((_, i) => i !== index);
-    setWeeklyPlan(updatedPlan);
-  };
+    const csvContent =
+      "data:text/csv;charset=utf-8," +
+      "Program,Week,Day,Exercise,Sets,Reps,Weight,RPE,Rest,Focus,Load_1RM\n" +
+      csvData.map((row) => Object.values(row).join(",")).join("\n");
 
-  // Handle duplicating weekly plan for multiple weeks with custom progression
-  const duplicateWeeklyPlan = (totalWeeks) => {
-    const week1Plan = weeklyPlan.filter((plan) => plan.week === 1);
-    if (week1Plan.length === 0) {
-      alert("Please define at least one day for Week 1 before duplicating.");
-      return;
-    }
-
-    const newPlan = [...weeklyPlan];
-    for (let week = 2; week <= totalWeeks; week++) {
-      week1Plan.forEach((day) => {
-        newPlan.push({
-          ...day,
-          week: week,
-          // Apply custom progression logic
-          target_reps: day.target_reps
-            ? adjustReps(day.target_reps, week)
-            : day.target_reps,
-          load_prescription_p1RM: day.load_prescription_p1RM
-            ? adjustWeight(day.load_prescription_p1RM, week)
-            : day.load_prescription_p1RM,
-        });
-      });
-    }
-    setWeeklyPlan(newPlan);
-  };
-
-  // Helper function to adjust reps based on progression logic
-  const adjustReps = (reps, week) => {
-    const baseReps = parseInt(reps.split("–")[0]) || 0;
-    const increase = progressionLogic.repsIncrease * (week - 1);
-    return `${baseReps + increase}${
-      reps.includes("–") ? `–${parseInt(reps.split("–")[1]) + increase}` : ""
-    }`;
-  };
-
-  // Helper function to adjust weight based on progression logic
-  const adjustWeight = (weight, week) => {
-    const baseWeight = parseInt(weight) || 0;
-    const increase = progressionLogic.weightIncrease * (week - 1);
-    return `${baseWeight + increase}${weight.includes("%") ? "%" : ""}`;
-  };
-
-  // Handle editing an existing program
-  const editProgram = (program) => {
-    setNewProgram({
-      Program_Name: program.Program_Name || "",
-      Program_Description: program.Program_Description || "",
-      Level: program.Level || "",
-      Focus: program.Focus || "",
-      Key_Training_Focus: program.Key_Training_Focus || "",
-      Nutrition_Recovery: program.Nutrition_Recovery || "",
-      Training_Mix_Frequency: program.Training_Mix_Frequency || "",
-      Key_Adaptations: program.Key_Adaptations || "",
-      Key_Assessments: program.Key_Assessments || "",
-      Key_Assessment_Goals: program.Key_Assessment_Goals || "",
-      Program_Macro_Cycle: program.Program_Macro_Cycle || "",
-      Weeks: program.Weeks || "",
-      Prefered_Season: program.Prefered_Season || "",
-      Program_Length_in_Weeks: program.Program_Length_in_Weeks || "",
-      Days_Per_Week: program.Days_Per_Week || "",
-      Time_Per_Workout: program.Time_Per_Workout || "",
-      Equipment: program.Equipment || "",
-      MUSCLE_ENGAGEMENT: program.MUSCLE_ENGAGEMENT || "",
-      Deload_Week: program.Deload_Week || "",
-      Progression: program.Progression || "",
-    });
-    setWeeklyPlan(getProgramDetails(program.Program_ID));
-    setIsEditing(true);
-    setSelectedProgram(program);
-    setShowAddProgramModal(true);
-  };
-
-  // Group library data by program_id for detailed view
-  const getProgramDetails = (programId) => {
-    return programsLibrary.filter((detail) => detail.program_id === programId);
-  };
-
-  // Filtered exercises based on search term with advanced matching
-  const filteredExercises = exerciseSearchTerm
-    ? exercises.filter((ex) => {
-        const terms = exerciseSearchTerm.toLowerCase().split(" ");
-        const searchableFields = [
-          ex.Exercise?.toLowerCase() || "",
-          ex.Target_Muscle_Group?.toLowerCase() || "",
-          ex.Primary_Equipment?.toLowerCase() || "",
-        ].join(" ");
-        return terms.every((term) => searchableFields.includes(term));
-      })
-    : exercises;
-
-  if (loading) {
-    return (
-      <Box p={4} textAlign="center">
-        <Spinner size="lg" color="teal.500" />
-        <Text mt={2}>Loading programs...</Text>
-      </Box>
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute(
+      "download",
+      `${program.Program_Name.replace(/\s+/g, "_")}_program.csv`
     );
-  }
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
-  if (error) {
-    return (
-      <Box p={4}>
-        <Alert status="error">
-          <AlertIcon />
-          {error}
-        </Alert>
-      </Box>
-    );
-  }
-
-  if (enrollmentStatus) {
-    return (
-      <Box p={4}>
-        <Alert status="success">
-          <AlertIcon />
-          {enrollmentStatus}
-        </Alert>
-        <Button
-          mt={4}
-          colorScheme="teal"
-          onClick={() => setEnrollmentStatus(null)}
-        >
-          Back to Programs
-        </Button>
-      </Box>
-    );
-  }
-
+  // Main render function
   return (
-    <Box p={4} maxW="100%" bg="gray.50">
-      <Flex align="center" mb={6}>
-        <IconButton
-          icon={<ArrowBackIcon />}
-          colorScheme="teal"
-          size="md"
-          onClick={goBackToDashboard}
-          aria-label="Back to Dashboard"
-          mr={2}
-        />
-        <Heading size="lg">Workout Programs</Heading>
-        <Button
-          colorScheme="teal"
-          size="md"
-          ml="auto"
-          leftIcon={<AddIcon />}
-          onClick={() => {
-            setIsEditing(false);
-            setSelectedProgram(null);
-            setNewProgram({
-              Program_Name: "",
-              Program_Description: "",
-              Level: "",
-              Focus: "",
-              Key_Training_Focus: "",
-              Nutrition_Recovery: "",
-              Training_Mix_Frequency: "",
-              Key_Adaptations: "",
-              Key_Assessments: "",
-              Key_Assessment_Goals: "",
-              Program_Macro_Cycle: "",
-              Weeks: "",
-              Prefered_Season: "",
-              Program_Length_in_Weeks: "",
-              Days_Per_Week: "",
-              Time_Per_Workout: "",
-              Equipment: "",
-              MUSCLE_ENGAGEMENT: "",
-              Deload_Week: "",
-              Progression: "",
-            });
-            setWeeklyPlan([]);
-            setShowAddProgramModal(true);
-          }}
-          aria-label="Add New Program"
-        >
-          Add Program
-        </Button>
+    <Box p={4} maxW="100%" bg="gray.50" minH="100vh">
+      {/* Header */}
+      <Flex align="center" justify="space-between" mb={6}>
+        <Flex align="center">
+          <IconButton
+            icon={<ArrowBackIcon />}
+            colorScheme="teal"
+            size="md"
+            onClick={goBackToDashboard}
+            aria-label="Back to Dashboard"
+            mr={3}
+          />
+          <Heading size="lg">Workout Programs</Heading>
+        </Flex>
+
+        <HStack spacing={3}>
+          <Button
+            leftIcon={<AddIcon />}
+            colorScheme="teal"
+            onClick={startCreatingProgram}
+            size="md"
+          >
+            Create Program
+          </Button>
+          <Button
+            leftIcon={<CalendarIcon />}
+            variant="outline"
+            onClick={onEnrollmentModalOpen}
+            size="md"
+          >
+            My Programs
+          </Button>
+        </HStack>
       </Flex>
 
-      {/* Programs Grid */}
-      <Box>
-        {programsOverview.length === 0 ? (
-          <Text fontSize="md" color="gray.500" textAlign="center">
-            No workout programs found.
-          </Text>
-        ) : (
-          <Grid
-            templateColumns={{
-              base: "1fr",
-              md: "repeat(2, 1fr)",
-              lg: "repeat(3, 1fr)",
-            }}
-            gap={4}
-          >
-            {programsOverview.map((program) => (
-              <Box
-                key={program.Program_ID}
-                p={4}
-                bg="white"
-                borderRadius="md"
-                boxShadow="sm"
-                _hover={{ boxShadow: "md", cursor: "pointer" }}
-                onClick={() => viewProgramDetails(program)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    viewProgramDetails(program);
-                  }
-                }}
-                aria-label={`View details for ${program.Program_Name}`}
-              >
-                <Heading size="sm" mb={2}>
-                  {program.Program_Name}
-                </Heading>
-                <Text fontSize="sm" mb={1}>
-                  Focus: {program.Focus || "N/A"}
-                </Text>
-                <Text fontSize="sm" mb={1}>
-                  Duration: {program.Weeks ? `${program.Weeks} Weeks` : "N/A"}
-                </Text>
-                <Text fontSize="sm" mb={1}>
-                  Level: {program.Level || "N/A"}
-                </Text>
-                <Flex gap={2} mt={2}>
-                  <Button
-                    size="sm"
-                    colorScheme="teal"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      viewProgramDetails(program);
-                    }}
-                  >
-                    View Details
-                  </Button>
-                  <Button
-                    size="sm"
-                    colorScheme="blue"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      editProgram(program);
-                    }}
-                  >
-                    Edit
-                  </Button>
-                </Flex>
-              </Box>
-            ))}
-          </Grid>
-        )}
-      </Box>
-
-      {/* Detailed View Modal */}
-      {selectedProgram && (
-        <Box
-          position="fixed"
-          top="0"
-          left="0"
-          right="0"
-          bottom="0"
-          bg="rgba(0,0,0,0.5)"
-          display="flex"
-          alignItems="center"
-          justifyContent="center"
-          zIndex="1000"
-          role="dialog"
-          aria-labelledby="program-details-title"
-          onClick={closeDetails}
-          onKeyDown={(e) => {
-            if (e.key === "Escape") {
-              closeDetails();
-            }
-          }}
-        >
-          <Box
-            bg="white"
-            p={6}
-            borderRadius="md"
-            maxW="800px"
-            width="90%"
-            maxH="80vh"
-            overflowY="auto"
-            onClick={(e) => e.stopPropagation()} // Prevent closing when clicking inside modal
-            onKeyDown={(e) => e.stopPropagation()} // Prevent closing when using keyboard inside modal
-          >
-            <Heading id="program-details-title" size="md" mb={4}>
-              {selectedProgram.Program_Name}
-            </Heading>
-            <Text mb={2}>
-              <strong>Focus:</strong> {selectedProgram.Focus || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Duration:</strong>{" "}
-              {selectedProgram.Weeks ? `${selectedProgram.Weeks} Weeks` : "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Level:</strong> {selectedProgram.Level || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Created:</strong> {selectedProgram.Created || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Description:</strong>{" "}
-              {selectedProgram.Program_Description || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Key Training Focus:</strong>{" "}
-              {selectedProgram.Key_Training_Focus || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Nutrition & Recovery:</strong>{" "}
-              {selectedProgram.Nutrition_Recovery || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Training Mix Frequency:</strong>{" "}
-              {selectedProgram.Training_Mix_Frequency || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Key Adaptations:</strong>{" "}
-              {selectedProgram.Key_Adaptations || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Key Assessments:</strong>{" "}
-              {selectedProgram.Key_Assessments || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Key Assessment Goals:</strong>{" "}
-              {selectedProgram.Key_Assessment_Goals || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Macro Cycle:</strong>{" "}
-              {selectedProgram.Program_Macro_Cycle || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Preferred Season:</strong>{" "}
-              {selectedProgram.Prefered_Season || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Program Length (Weeks):</strong>{" "}
-              {selectedProgram.Program_Length_in_Weeks || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Days Per Week:</strong>{" "}
-              {selectedProgram.Days_Per_Week || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Time Per Workout:</strong>{" "}
-              {selectedProgram.Time_Per_Workout || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Equipment:</strong> {selectedProgram.Equipment || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Muscle Engagement:</strong>{" "}
-              {selectedProgram.MUSCLE_ENGAGEMENT || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Deload Week:</strong>{" "}
-              {selectedProgram.Deload_Week || "N/A"}
-            </Text>
-            <Text mb={2}>
-              <strong>Progression:</strong>{" "}
-              {selectedProgram.Progression || "N/A"}
-            </Text>
-
-            {/* Detailed Weekly/Daily Breakdown from program_library */}
-            <Heading size="sm" mt={4} mb={2}>
-              Program Details by Week/Day
-            </Heading>
-            {getProgramDetails(selectedProgram.Program_ID).length > 0 ? (
-              <Box>
-                {getProgramDetails(selectedProgram.Program_ID).map(
-                  (detail, index) => (
-                    <Box
-                      key={index}
-                      p={2}
-                      borderBottom="1px solid"
-                      borderColor="gray.200"
-                    >
-                      <Text fontSize="sm">
-                        <strong>Week:</strong> {detail.week || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Day:</strong> {detail.day || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Exercise:</strong> {detail.exercise || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Macro Cycle:</strong>{" "}
-                        {detail.program_macro_cycle || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Focus:</strong> {detail.focus || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Target Sets:</strong>{" "}
-                        {detail.target_sets || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Target Reps:</strong>{" "}
-                        {detail.target_reps || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Load Prescription (p1RM):</strong>{" "}
-                        {detail.load_prescription_p1RM || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Target RPE:</strong>{" "}
-                        {detail.target_rpe || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Target Rest:</strong>{" "}
-                        {detail.target_rest || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Target Tempo:</strong>{" "}
-                        {detail.target_tempo || "N/A"}
-                      </Text>
-                      <Text fontSize="sm">
-                        <strong>Target Time/Distance:</strong>{" "}
-                        {detail.target_time_distance || "N/A"}
-                      </Text>
-                    </Box>
-                  )
-                )}
-              </Box>
-            ) : (
-              <Text fontSize="sm" color="gray.500">
-                No detailed weekly/day data available for this program.
-              </Text>
-            )}
-
-            <Flex mt={4} gap={2}>
-              <Button colorScheme="gray" size="md" onClick={closeDetails}>
-                Close
-              </Button>
-              <Button
-                colorScheme="green"
-                size="md"
-                onClick={() => enrollInProgram(selectedProgram.Program_ID)}
-              >
-                Enroll
-              </Button>
-              <Button
-                colorScheme="blue"
-                size="md"
-                onClick={() => editProgram(selectedProgram)}
-              >
-                Edit Program
-              </Button>
-            </Flex>
-          </Box>
-        </Box>
+      {/* Error and Success Messages */}
+      {error && (
+        <Alert status="error" mb={4}>
+          <AlertIcon />
+          {error}
+          <CloseButton
+            position="absolute"
+            right="8px"
+            top="8px"
+            onClick={() => setError(null)}
+          />
+        </Alert>
       )}
 
-      {/* Add/Edit Program Modal */}
-      {showAddProgramModal && (
-        <Modal
-          isOpen={showAddProgramModal}
-          onClose={() => setShowAddProgramModal(false)}
-          size="xl"
-          scrollBehavior="inside"
-        >
-          <ModalOverlay />
-          <ModalContent maxH="80vh" overflowY="auto">
-            <ModalHeader>
-              {isEditing ? "Edit Program" : "Add New Program"}
-            </ModalHeader>
-            <ModalCloseButton />
-            <ModalBody>
-              <Box mb={4}>
-                <Heading size="md" mb={2}>
-                  Program Overview (program_overview)
-                </Heading>
-                <FormControl mb={2}>
-                  <FormLabel>Program Name</FormLabel>
-                  <Input
-                    value={newProgram.Program_Name}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Program_Name: e.target.value,
-                      })
-                    }
-                    placeholder="Enter program name"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Description</FormLabel>
-                  <Textarea
-                    value={newProgram.Program_Description}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Program_Description: e.target.value,
-                      })
-                    }
-                    placeholder="Enter program description"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Level</FormLabel>
-                  <Select
-                    value={newProgram.Level}
-                    onChange={(e) =>
-                      setNewProgram({ ...newProgram, Level: e.target.value })
-                    }
-                    placeholder="Select level"
-                  >
-                    {fitnessLevels.map((level) => (
-                      <option key={level} value={level}>
-                        {level}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Focus</FormLabel>
-                  <Input
-                    value={newProgram.Focus}
-                    onChange={(e) =>
-                      setNewProgram({ ...newProgram, Focus: e.target.value })
-                    }
-                    placeholder="Enter focus (e.g., Hypertrophy, Strength)"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Key Training Focus</FormLabel>
-                  <Textarea
-                    value={newProgram.Key_Training_Focus}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Key_Training_Focus: e.target.value,
-                      })
-                    }
-                    placeholder="Enter key training focus"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Nutrition & Recovery</FormLabel>
-                  <Textarea
-                    value={newProgram.Nutrition_Recovery}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Nutrition_Recovery: e.target.value,
-                      })
-                    }
-                    placeholder="Enter nutrition and recovery details"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Training Mix Frequency</FormLabel>
-                  <Input
-                    value={newProgram.Training_Mix_Frequency}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Training_Mix_Frequency: e.target.value,
-                      })
-                    }
-                    placeholder="Enter training mix frequency"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Key Adaptations</FormLabel>
-                  <Select
-                    value={newProgram.Key_Adaptations}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Key_Adaptations: e.target.value,
-                      })
-                    }
-                    placeholder="Select key adaptations"
-                  >
-                    {keyAdaptations.map((adaptation) => (
-                      <option key={adaptation} value={adaptation}>
-                        {adaptation}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Key Assessments</FormLabel>
-                  <Textarea
-                    value={newProgram.Key_Assessments}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Key_Assessments: e.target.value,
-                      })
-                    }
-                    placeholder="Enter key assessments"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Key Assessment Goals</FormLabel>
-                  <Textarea
-                    value={newProgram.Key_Assessment_Goals}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Key_Assessment_Goals: e.target.value,
-                      })
-                    }
-                    placeholder="Enter key assessment goals"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Macro Cycle</FormLabel>
-                  <Input
-                    value={newProgram.Program_Macro_Cycle}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Program_Macro_Cycle: e.target.value,
-                      })
-                    }
-                    placeholder="Enter macro cycle (e.g., Q1-Bulk)"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Total Weeks</FormLabel>
-                  <Input
-                    type="number"
-                    value={newProgram.Weeks}
-                    onChange={(e) =>
-                      setNewProgram({ ...newProgram, Weeks: e.target.value })
-                    }
-                    placeholder="Enter total weeks"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Preferred Season</FormLabel>
-                  <Input
-                    value={newProgram.Prefered_Season}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Prefered_Season: e.target.value,
-                      })
-                    }
-                    placeholder="Enter preferred season"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Program Length in Weeks</FormLabel>
-                  <Input
-                    type="number"
-                    value={newProgram.Program_Length_in_Weeks}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Program_Length_in_Weeks: e.target.value,
-                      })
-                    }
-                    placeholder="Enter program length in weeks"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Days Per Week</FormLabel>
-                  <Input
-                    type="number"
-                    value={newProgram.Days_Per_Week}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Days_Per_Week: e.target.value,
-                      })
-                    }
-                    placeholder="Enter days per week"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Time Per Workout</FormLabel>
-                  <Input
-                    value={newProgram.Time_Per_Workout}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Time_Per_Workout: e.target.value,
-                      })
-                    }
-                    placeholder="Enter time per workout (e.g., 60 min)"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Equipment</FormLabel>
-                  <Select
-                    value={newProgram.Equipment}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Equipment: e.target.value,
-                      })
-                    }
-                    placeholder="Select equipment"
-                  >
-                    {equipmentList.map((equip) => (
-                      <option key={equip} value={equip}>
-                        {equip}
-                      </option>
-                    ))}
-                  </Select>
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Muscle Engagement</FormLabel>
-                  <Input
-                    value={newProgram.MUSCLE_ENGAGEMENT}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        MUSCLE_ENGAGEMENT: e.target.value,
-                      })
-                    }
-                    placeholder="Enter muscle engagement details"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Deload Week</FormLabel>
-                  <Input
-                    value={newProgram.Deload_Week}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Deload_Week: e.target.value,
-                      })
-                    }
-                    placeholder="Enter deload week details"
-                  />
-                </FormControl>
-                <FormControl mb={2}>
-                  <FormLabel>Progression</FormLabel>
-                  <Textarea
-                    value={newProgram.Progression}
-                    onChange={(e) =>
-                      setNewProgram({
-                        ...newProgram,
-                        Progression: e.target.value,
-                      })
-                    }
-                    placeholder="Enter progression strategy"
-                  />
-                </FormControl>
-              </Box>
+      {successMessage && (
+        <Alert status="success" mb={4}>
+          <AlertIcon />
+          {successMessage}
+        </Alert>
+      )}
 
-              <Box mb={4}>
-                <Heading size="md" mb={2}>
-                  Weekly Plan for program_library
-                </Heading>
-                <Text fontSize="sm" mb={2} color="gray.500">
-                  Define days for Week 1, then duplicate across weeks with
-                  progression adjustments.
-                </Text>
-                <Flex gap={2} wrap="wrap" mb={2}>
-                  <FormControl width={{ base: "full", md: "100px" }}>
-                    <FormLabel>Week</FormLabel>
-                    <Input
-                      type="number"
-                      value={newDay.week}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, week: parseInt(e.target.value) })
-                      }
-                      placeholder="Week"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "100px" }}>
-                    <FormLabel>Day</FormLabel>
-                    <Input
-                      type="number"
-                      value={newDay.day}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, day: parseInt(e.target.value) })
-                      }
-                      placeholder="Day"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "200px" }}>
-                    <FormLabel>Focus</FormLabel>
-                    <Input
-                      value={newDay.focus}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, focus: e.target.value })
-                      }
-                      placeholder="Focus (e.g., Push, Pull, Legs)"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "200px" }}>
-                    <FormLabel>Exercise</FormLabel>
-                    <Input
-                      value={newDay.exercise}
-                      onChange={(e) => {
-                        setNewDay({ ...newDay, exercise: e.target.value });
-                        setExerciseSearchTerm(e.target.value);
-                      }}
-                      placeholder="Search exercise (e.g., squat barbell)"
-                      onFocus={() =>
-                        setExerciseSearchTerm(newDay.exercise || "")
-                      }
-                    />
-                    {exerciseSearchTerm && (
+      {/* Search and Filters */}
+      <Box mb={6} p={4} bg="white" borderRadius="lg" boxShadow="sm">
+        <Heading size="md" mb={4}>
+          Search & Filter Programs
+        </Heading>
+
+        <Grid
+          templateColumns={{
+            base: "1fr",
+            md: "repeat(2, 1fr)",
+            lg: "repeat(5, 1fr)",
+          }}
+          gap={4}
+        >
+          <FormControl>
+            <FormLabel fontSize="sm">Search Programs</FormLabel>
+            <Input
+              placeholder="Search by name or description..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              size="md"
+            />
+          </FormControl>
+
+          <FormControl>
+            <FormLabel fontSize="sm">Level</FormLabel>
+            <Select
+              placeholder="All Levels"
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+              size="md"
+            >
+              {uniqueLevels.map((level) => (
+                <option key={level} value={level}>
+                  {level}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl>
+            <FormLabel fontSize="sm">Focus</FormLabel>
+            <Select
+              placeholder="All Focus Areas"
+              value={focusFilter}
+              onChange={(e) => setFocusFilter(e.target.value)}
+              size="md"
+            >
+              {WORKOUT_FOCUS_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </FormControl>
+
+          <FormControl>
+            <FormLabel fontSize="sm">Duration</FormLabel>
+            <Select
+              placeholder="All Durations"
+              value={weeksFilter}
+              onChange={(e) => setWeeksFilter(e.target.value)}
+              size="md"
+            >
+              <option value="short">Short (1-4 weeks)</option>
+              <option value="medium">Medium (5-12 weeks)</option>
+              <option value="long">Long (13+ weeks)</option>
+            </Select>
+          </FormControl>
+
+          <Flex align="end">
+            <Button
+              onClick={clearFilters}
+              variant="outline"
+              size="md"
+              width="full"
+            >
+              Clear Filters
+            </Button>
+          </Flex>
+        </Grid>
+
+        <Text fontSize="sm" color="gray.600" mt={3}>
+          Showing {filteredPrograms.length} of {programs.length} programs
+        </Text>
+      </Box>
+
+      {/* Quick Stats */}
+      {programs.length > 0 && (
+        <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+          <Stat bg="white" p={4} borderRadius="md" boxShadow="sm">
+            <StatLabel>Total Programs</StatLabel>
+            <StatNumber color="teal.500">{programs.length}</StatNumber>
+            <StatHelpText>Available programs</StatHelpText>
+          </Stat>
+          <Stat bg="white" p={4} borderRadius="md" boxShadow="sm">
+            <StatLabel>My Enrollments</StatLabel>
+            <StatNumber color="blue.500">{userEnrollments.length}</StatNumber>
+            <StatHelpText>Programs enrolled</StatHelpText>
+          </Stat>
+          <Stat bg="white" p={4} borderRadius="md" boxShadow="sm">
+            <StatLabel>Total Exercises</StatLabel>
+            <StatNumber color="purple.500">
+              {programs.reduce((sum, p) => sum + (p.exercises?.length || 0), 0)}
+            </StatNumber>
+            <StatHelpText>Across all programs</StatHelpText>
+          </Stat>
+          <Stat bg="white" p={4} borderRadius="md" boxShadow="sm">
+            <StatLabel>Avg Duration</StatLabel>
+            <StatNumber color="orange.500">
+              {programs.length > 0
+                ? Math.round(
+                    programs.reduce(
+                      (sum, p) => sum + (parseInt(p.Weeks) || 0),
+                      0
+                    ) / programs.length
+                  )
+                : 0}{" "}
+              weeks
+            </StatNumber>
+            <StatHelpText>Program length</StatHelpText>
+          </Stat>
+        </SimpleGrid>
+      )}
+
+      {/* Programs Grid */}
+      {filteredPrograms.length === 0 ? (
+        <Box textAlign="center" py={10}>
+          <Text fontSize="lg" color="gray.500" mb={4}>
+            {programs.length === 0
+              ? "No workout programs available."
+              : "No programs match your search criteria."}
+          </Text>
+          {programs.length === 0 && (
+            <Button
+              leftIcon={<AddIcon />}
+              colorScheme="teal"
+              onClick={startCreatingProgram}
+            >
+              Create Your First Program
+            </Button>
+          )}
+        </Box>
+      ) : (
+        <Grid
+          templateColumns={{
+            base: "1fr",
+            md: "repeat(2, 1fr)",
+            lg: "repeat(3, 1fr)",
+          }}
+          gap={6}
+        >
+          {filteredPrograms.map((program) => {
+            const stats = getProgramStats(program);
+            const isEnrolled = isUserEnrolled(program.Program_ID);
+
+            return (
+              <Card
+                key={program.Program_ID}
+                overflow="hidden"
+                variant="elevated"
+                _hover={{
+                  boxShadow: "xl",
+                  transform: "translateY(-4px)",
+                  borderColor: "teal.200",
+                }}
+                transition="all 0.3s ease"
+                borderWidth="1px"
+                borderColor="gray.200"
+              >
+                {/* Program Header */}
+                <CardHeader
+                  bg={isEnrolled ? "teal.500" : "gradient-to-r"}
+                  bgGradient={
+                    !isEnrolled ? "linear(to-r, teal.500, blue.500)" : undefined
+                  }
+                  color="white"
+                  position="relative"
+                >
+                  <Flex justify="space-between" align="start">
+                    <Box flex="1">
+                      <Heading size="md" mb={2} noOfLines={2}>
+                        {program.Program_Name}
+                      </Heading>
+                      <HStack spacing={2} mb={2}>
+                        <Badge
+                          colorScheme="whiteAlpha"
+                          variant="solid"
+                          fontSize="xs"
+                        >
+                          {program.Level}
+                        </Badge>
+                        <Badge
+                          colorScheme="whiteAlpha"
+                          variant="solid"
+                          fontSize="xs"
+                        >
+                          {program.Weeks} weeks
+                        </Badge>
+                        {isEnrolled && (
+                          <Badge
+                            colorScheme="yellow"
+                            variant="solid"
+                            fontSize="xs"
+                          >
+                            <StarIcon w={2} h={2} mr={1} />
+                            Enrolled
+                          </Badge>
+                        )}
+                      </HStack>
+                    </Box>
+
+                    <HStack spacing={1}>
+                      <IconButton
+                        icon={<EditIcon />}
+                        size="sm"
+                        variant="ghost"
+                        colorScheme="whiteAlpha"
+                        onClick={() => {
+                          setEditingProgram(program);
+                          // Load program data into wizard
+                          setProgramOverview({
+                            Program_Name: program.Program_Name || "",
+                            Program_Description:
+                              program.Program_Description || "",
+                            Level: program.Level || "",
+                            Focus: program.Focus || "",
+                            Key_Training_Focus:
+                              program.Key_Training_Focus || "",
+                            Nutrition_Recovery:
+                              program.Nutrition_Recovery || "",
+                            Training_Mix_Frequency:
+                              program.Training_Mix_Frequency || "",
+                            Key_Adaptations: program.Key_Adaptations || "",
+                            Key_Assessments: program.Key_Assessments || "",
+                            Key_Assessment_Goals:
+                              program.Key_Assessment_Goals || "",
+                            Program_Macro_Cycle:
+                              program.Program_Macro_Cycle || "",
+                            Weeks: program.Weeks || "",
+                            Prefered_Season: program.Prefered_Season || "",
+                            Program_Length_in_Weeks:
+                              program.Program_Length_in_Weeks,
+                            Days_Per_Week: program.Days_Per_Week || "",
+                            Time_Per_Workout: program.Time_Per_Workout || "",
+                            Equipment: program.Equipment || "",
+                            MUSCLE_ENGAGEMENT: program.MUSCLE_ENGAGEMENT || "",
+                            Deload_Week: program.Deload_Week || "",
+                            Progression: program.Progression || "",
+                            user_id: program.user_id,
+                          });
+                          onProgramModalOpen();
+                        }}
+                        aria-label="Edit program"
+                      />
+                      <IconButton
+                        icon={<DeleteIcon />}
+                        size="sm"
+                        variant="ghost"
+                        colorScheme="whiteAlpha"
+                        onClick={() => {
+                          setSelectedProgram(program);
+                          onDeleteModalOpen();
+                        }}
+                        aria-label="Delete program"
+                      />
+                    </HStack>
+                  </Flex>
+                </CardHeader>
+
+                {/* Program Body */}
+                <CardBody>
+                  <VStack spacing={4} align="stretch">
+                    {/* Program Details */}
+                    <Box>
+                      <Text fontSize="sm" color="gray.600" mb={2}>
+                        <strong>Focus:</strong>{" "}
+                        <Badge
+                          colorScheme={getFocusColorScheme(
+                            getFocusType(program.Focus)
+                          )}
+                          variant="subtle"
+                        >
+                          {program.Focus || "Mixed"}
+                        </Badge>
+                      </Text>
+
+                      {program.Program_Description && (
+                        <Text
+                          fontSize="sm"
+                          color="gray.700"
+                          noOfLines={3}
+                          mb={3}
+                        >
+                          {program.Program_Description}
+                        </Text>
+                      )}
+                    </Box>
+
+                    {/* Program Statistics */}
+                    <SimpleGrid columns={2} spacing={3}>
+                      <Stat size="sm">
+                        <StatLabel fontSize="xs">Total Exercises</StatLabel>
+                        <StatNumber fontSize="lg" color="teal.500">
+                          {stats.totalExercises}
+                        </StatNumber>
+                      </Stat>
+                      <Stat size="sm">
+                        <StatLabel fontSize="xs">Training Days</StatLabel>
+                        <StatNumber fontSize="lg" color="blue.500">
+                          {stats.uniqueDays}
+                        </StatNumber>
+                      </Stat>
+                    </SimpleGrid>
+
+                    <Divider />
+
+                    {/* Action Buttons */}
+                    <VStack spacing={3}>
+                      {isEnrolled ? (
+                        <Button
+                          colorScheme="red"
+                          variant="outline"
+                          size="md"
+                          width="full"
+                          onClick={() =>
+                            unenrollFromProgram(program.Program_ID)
+                          }
+                          isLoading={enrolling === program.Program_ID}
+                          loadingText="Unenrolling..."
+                          leftIcon={<StarIcon />}
+                        >
+                          Unenroll from Program
+                        </Button>
+                      ) : (
+                        <Button
+                          colorScheme="teal"
+                          size="md"
+                          width="full"
+                          onClick={() => enrollInProgram(program.Program_ID)}
+                          isLoading={enrolling === program.Program_ID}
+                          loadingText="Enrolling..."
+                          leftIcon={<StarIcon />}
+                        >
+                          Enroll in Program
+                        </Button>
+                      )}
+
+                      <HStack spacing={2} width="full">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          flex="1"
+                          onClick={() =>
+                            setExpandedProgram(
+                              expandedProgram === program.Program_ID
+                                ? null
+                                : program.Program_ID
+                            )
+                          }
+                          leftIcon={<InfoIcon />}
+                        >
+                          {expandedProgram === program.Program_ID
+                            ? "Hide Details"
+                            : "View Details"}
+                        </Button>
+
+                        <IconButton
+                          icon={<DownloadIcon />}
+                          size="sm"
+                          variant="outline"
+                          onClick={() => exportProgramData(program)}
+                          aria-label="Export program"
+                        />
+                      </HStack>
+                    </VStack>
+
+                    {/* Expanded Program Details */}
+                    {expandedProgram === program.Program_ID && (
                       <Box
-                        position="absolute"
-                        bg="white"
-                        border="1px solid"
+                        mt={4}
+                        pt={4}
+                        borderTop="1px solid"
                         borderColor="gray.200"
-                        borderRadius="md"
-                        maxH="200px"
-                        overflowY="auto"
-                        zIndex="1000"
-                        width="inherit"
-                        mt={1}
                       >
-                        {filteredExercises.length === 0 ? (
-                          <Text p={2} fontSize="sm" color="gray.500">
-                            No matching exercises found.
-                          </Text>
+                        <Heading size="sm" mb={4} color="teal.600">
+                          Program Schedule
+                        </Heading>
+
+                        {program.exercises && program.exercises.length > 0 ? (
+                          <Accordion allowMultiple>
+                            {Object.entries(
+                              groupExercisesByWeekAndDay(program.exercises)
+                            ).map(([weekDay, exercises], index) => (
+                              <AccordionItem
+                                key={index}
+                                border="1px solid"
+                                borderColor="gray.200"
+                                borderRadius="md"
+                                mb={2}
+                              >
+                                <AccordionButton _hover={{ bg: "gray.50" }}>
+                                  <Box flex="1" textAlign="left">
+                                    <Text
+                                      fontWeight="semibold"
+                                      color="gray.700"
+                                    >
+                                      {weekDay}
+                                    </Text>
+                                    <Text fontSize="sm" color="gray.500">
+                                      {exercises.length} exercises •{" "}
+                                      {exercises.reduce(
+                                        (sum, ex) =>
+                                          sum + (parseInt(ex.target_sets) || 0),
+                                        0
+                                      )}{" "}
+                                      total sets
+                                    </Text>
+                                  </Box>
+                                  <AccordionIcon />
+                                </AccordionButton>
+                                <AccordionPanel pb={4} bg="gray.50">
+                                  {isMobile ? (
+                                    // Mobile view - Card layout
+                                    <VStack spacing={3} align="stretch">
+                                      {exercises.map(
+                                        (exercise, exerciseIndex) => (
+                                          <Box
+                                            key={`${exercise.exercise}-${exercise.week}-${exercise.day}`}
+                                            p={3}
+                                            bg="white"
+                                            borderRadius="md"
+                                            boxShadow="sm"
+                                          >
+                                            <Text fontWeight="bold" mb={3}>
+                                              {exercise.exercise}
+                                            </Text>
+
+                                            <SimpleGrid
+                                              columns={2}
+                                              spacing={2}
+                                              fontSize="sm"
+                                            >
+                                              <Text>
+                                                <strong>Sets:</strong>{" "}
+                                                {exercise.target_sets || "N/A"}
+                                              </Text>
+                                              <Text>
+                                                <strong>Reps:</strong>{" "}
+                                                {exercise.target_reps || "N/A"}
+                                              </Text>
+                                              <Text>
+                                                <strong>Weight:</strong>{" "}
+                                                {exercise.target_weight_kg ||
+                                                  "N/A"}{" "}
+                                                kg
+                                              </Text>
+                                              <Text>
+                                                <strong>RPE:</strong>{" "}
+                                                {exercise.target_rpe || "N/A"}
+                                              </Text>
+                                              <Text>
+                                                <strong>Rest:</strong>{" "}
+                                                {exercise.target_rest || "N/A"}s
+                                              </Text>
+                                              <Text>
+                                                <strong>Load %:</strong>{" "}
+                                                {exercise.load_prescription_p1RM ||
+                                                  "N/A"}
+                                                %
+                                              </Text>
+                                            </SimpleGrid>
+
+                                            <Box mt={3}>
+                                              <Text fontSize="sm">
+                                                <strong>Focus:</strong>{" "}
+                                                <Badge
+                                                  colorScheme={getFocusColorScheme(
+                                                    getFocusType(exercise.focus)
+                                                  )}
+                                                  variant="subtle"
+                                                >
+                                                  {exercise.focus ||
+                                                    "Not specified"}
+                                                </Badge>
+                                              </Text>
+                                            </Box>
+                                          </Box>
+                                        )
+                                      )}
+                                    </VStack>
+                                  ) : (
+                                    // Desktop view - Table layout
+                                    <Box overflowX="auto">
+                                      <Table size="sm" variant="simple">
+                                        <Thead>
+                                          <Tr>
+                                            <Th>Exercise</Th>
+                                            <Th>Sets</Th>
+                                            <Th>Reps</Th>
+                                            <Th>Weight (kg)</Th>
+                                            <Th>RPE</Th>
+                                            <Th>Rest (s)</Th>
+                                            <Th>Load %</Th>
+                                            <Th>Focus</Th>
+                                          </Tr>
+                                        </Thead>
+                                        <Tbody>
+                                          {exercises.map(
+                                            (exercise, exerciseIndex) => (
+                                              <Tr
+                                                key={`${exercise.exercise}-${exercise.week}-${exercise.day}`}
+                                              >
+                                                <Td
+                                                  fontWeight="medium"
+                                                  maxW="200px"
+                                                >
+                                                  <Text noOfLines={2}>
+                                                    {exercise.exercise}
+                                                  </Text>
+                                                </Td>
+                                                <Td>
+                                                  {exercise.target_sets ||
+                                                    "N/A"}
+                                                </Td>
+                                                <Td>
+                                                  {exercise.target_reps ||
+                                                    "N/A"}
+                                                </Td>
+                                                <Td>
+                                                  {exercise.target_weight_kg ||
+                                                    "N/A"}
+                                                </Td>
+                                                <Td>
+                                                  {exercise.target_rpe || "N/A"}
+                                                </Td>
+                                                <Td>
+                                                  {exercise.target_rest ||
+                                                    "N/A"}
+                                                </Td>
+                                                <Td>
+                                                  {exercise.load_prescription_p1RM ||
+                                                    "N/A"}
+                                                  %
+                                                </Td>
+                                                <Td>
+                                                  <Badge
+                                                    colorScheme={getFocusColorScheme(
+                                                      getFocusType(
+                                                        exercise.focus
+                                                      )
+                                                    )}
+                                                    variant="subtle"
+                                                    size="sm"
+                                                  >
+                                                    {exercise.focus || "N/A"}
+                                                  </Badge>
+                                                </Td>
+                                              </Tr>
+                                            )
+                                          )}
+                                        </Tbody>
+                                      </Table>
+                                    </Box>
+                                  )}
+                                </AccordionPanel>
+                              </AccordionItem>
+                            ))}
+                          </Accordion>
                         ) : (
-                          filteredExercises.slice(0, 10).map((ex) => (
-                            <Text
-                              key={ex.Exercise}
-                              p={2}
-                              fontSize="sm"
-                              _hover={{ bg: "gray.100", cursor: "pointer" }}
-                              onClick={() => {
-                                setNewDay({ ...newDay, exercise: ex.Exercise });
-                                setExerciseSearchTerm("");
-                              }}
-                            >
-                              {ex.Exercise} ({ex.Target_Muscle_Group || "N/A"} -{" "}
-                              {ex.Primary_Equipment || "N/A"})
+                          <Box
+                            textAlign="center"
+                            py={6}
+                            bg="gray.50"
+                            borderRadius="md"
+                          >
+                            <Text color="gray.500" mb={3}>
+                              No exercises found for this program.
                             </Text>
-                          ))
+                          </Box>
                         )}
                       </Box>
                     )}
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "120px" }}>
-                    <FormLabel>Target Sets</FormLabel>
-                    <Input
-                      type="number"
-                      value={newDay.target_sets}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, target_sets: e.target.value })
-                      }
-                      placeholder="Sets"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "120px" }}>
-                    <FormLabel>Target Reps</FormLabel>
-                    <Input
-                      value={newDay.target_reps}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, target_reps: e.target.value })
-                      }
-                      placeholder="Reps (e.g., 8-12)"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "150px" }}>
-                    <FormLabel>Load (%1RM)</FormLabel>
-                    <Input
-                      value={newDay.load_prescription_p1RM}
-                      onChange={(e) =>
-                        setNewDay({
-                          ...newDay,
-                          load_prescription_p1RM: e.target.value,
-                        })
-                      }
-                      placeholder="Load (e.g., 70%)"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "120px" }}>
-                    <FormLabel>Target RPE</FormLabel>
-                    <Input
-                      type="number"
-                      value={newDay.target_rpe}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, target_rpe: e.target.value })
-                      }
-                      placeholder="RPE (1-10)"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "120px" }}>
-                    <FormLabel>Target Rest</FormLabel>
-                    <Input
-                      value={newDay.target_rest}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, target_rest: e.target.value })
-                      }
-                      placeholder="Rest (e.g., 90s)"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "120px" }}>
-                    <FormLabel>Target Tempo</FormLabel>
-                    <Input
-                      value={newDay.target_tempo}
-                      onChange={(e) =>
-                        setNewDay({ ...newDay, target_tempo: e.target.value })
-                      }
-                      placeholder="Tempo (e.g., 3-0-1)"
-                    />
-                  </FormControl>
-                  <FormControl width={{ base: "full", md: "150px" }}>
-                    <FormLabel>Target Time/Distance</FormLabel>
-                    <Input
-                      value={newDay.target_time_distance}
-                      onChange={(e) =>
-                        setNewDay({
-                          ...newDay,
-                          target_time_distance: e.target.value,
-                        })
-                      }
-                      placeholder="Time/Distance"
-                    />
-                  </FormControl>
-                  <Button
-                    colorScheme="blue"
-                    size="md"
-                    onClick={addDayToPlan}
-                    aria-label={
-                      editingDayIndex !== null
-                        ? "Update Day in Plan"
-                        : "Add Day to Plan"
-                    }
-                    mt={{ base: 2, md: 8 }}
-                  >
-                    {editingDayIndex !== null
-                      ? "Update Day"
-                      : "Add Day to Plan"}
-                  </Button>
-                </Flex>
+                  </VStack>
+                </CardBody>
+              </Card>
+            );
+          })}
+        </Grid>
+      )}
 
-                {/* Display current weekly plan */}
-                {weeklyPlan.length > 0 && (
-                  <Box
-                    mb={4}
-                    p={2}
-                    bg="gray.50"
-                    borderRadius="md"
-                    maxH="200px"
-                    overflowY="auto"
-                  >
-                    <Heading size="sm" mb={2}>
-                      Current Weekly Plan
-                    </Heading>
-                    <Table variant="simple" size="sm">
-                      <Tbody>
-                        {weeklyPlan.map((plan, index) => (
-                          <Tr key={index}>
-                            <Td>
-                              Week {plan.week}, Day {plan.day}
-                            </Td>
-                            <Td>{plan.focus}</Td>
-                            <Td>{plan.exercise || "N/A"}</Td>
-                            <Td>Sets: {plan.target_sets || "N/A"}</Td>
-                            <Td>Reps: {plan.target_reps || "N/A"}</Td>
-                            <Td>
-                              <IconButton
-                                icon={<EditIcon />}
-                                size="sm"
-                                mr={1}
-                                onClick={() => editDayInPlan(index)}
-                                aria-label={`Edit Week ${plan.week}, Day ${plan.day}`}
-                              />
-                              <IconButton
-                                icon={<DeleteIcon />}
-                                size="sm"
-                                colorScheme="red"
-                                onClick={() => deleteDayFromPlan(index)}
-                                aria-label={`Delete Week ${plan.week}, Day ${plan.day}`}
-                              />
-                            </Td>
-                          </Tr>
-                        ))}
-                      </Tbody>
-                    </Table>
-                  </Box>
-                )}
+      {/* Program Creation Modal */}
+      <Modal
+        isOpen={isProgramModalOpen}
+        onClose={onProgramModalClose}
+        size="6xl"
+        closeOnOverlayClick={false}
+      >
+        <ModalOverlay />
+        <ModalContent maxH="90vh" overflowY="auto">
+          <ModalHeader>
+            {editingProgram ? "Edit Program" : "Create New Program"}
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <ProgramCreationWizard />
+          </ModalBody>
+        </ModalContent>
+      </Modal>
 
-                {/* Progression Logic Customization */}
-                <Box mb={4}>
-                  <Heading size="sm" mb={2}>
-                    Progression Logic for Duplication
-                  </Heading>
-                  <Flex gap={2} wrap="wrap">
-                    <FormControl width={{ base: "full", md: "200px" }}>
-                      <FormLabel>Reps Increase per Week</FormLabel>
-                      <Input
-                        type="number"
-                        value={progressionLogic.repsIncrease}
-                        onChange={(e) =>
-                          setProgressionLogic({
-                            ...progressionLogic,
-                            repsIncrease: parseInt(e.target.value) || 0,
-                          })
-                        }
-                        placeholder="Reps increase per week"
-                      />
-                    </FormControl>
-                    <FormControl width={{ base: "full", md: "200px" }}>
-                      <FormLabel>Weight Increase per Week (%)</FormLabel>
-                      <Input
-                        type="number"
-                        value={progressionLogic.weightIncrease}
-                        onChange={(e) =>
-                          setProgressionLogic({
-                            ...progressionLogic,
-                            weightIncrease: parseInt(e.target.value) || 0,
-                          })
-                        }
-                        placeholder="Weight increase per week (%)"
-                      />
-                    </FormControl>
-                  </Flex>
-                </Box>
-
-                {/* Duplicate plan for multiple weeks */}
-                <Flex gap={2} align="center">
-                  <FormControl width={{ base: "full", md: "150px" }}>
-                    <FormLabel>Duplicate for Weeks</FormLabel>
-                    <Input
-                      type="number"
-                      placeholder="Total Weeks"
-                      onChange={(e) =>
-                        duplicateWeeklyPlan(parseInt(e.target.value) || 1)
-                      }
-                    />
-                  </FormControl>
-                  <Button
-                    colorScheme="gray"
-                    size="md"
-                    leftIcon={<CopyIcon />}
-                    mt={{ base: 2, md: 8 }}
-                    onClick={() =>
-                      duplicateWeeklyPlan(parseInt(newProgram.Weeks) || 1)
-                    }
-                    aria-label="Duplicate for All Weeks"
-                  >
-                    Duplicate for All Weeks
-                  </Button>
-                </Flex>
-              </Box>
-            </ModalBody>
-            <ModalFooter>
+      {/* Delete Confirmation Modal */}
+      <Modal isOpen={isDeleteModalOpen} onClose={onDeleteModalClose}>
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>Delete Program</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text>
+              Are you sure you want to delete the program "
+              {selectedProgram?.Program_Name}"? This action cannot be undone and
+              will remove all associated exercises.
+            </Text>
+          </ModalBody>
+          <ModalFooter>
+            <HStack spacing={3}>
               <Button
-                colorScheme="gray"
-                mr={3}
-                onClick={() => setShowAddProgramModal(false)}
+                colorScheme="red"
+                onClick={() => deleteProgram(selectedProgram?.Program_ID)}
+                isLoading={loading}
+                loadingText="Deleting..."
               >
+                Delete Program
+              </Button>
+              <Button variant="outline" onClick={onDeleteModalClose}>
                 Cancel
               </Button>
-              <Button colorScheme="teal" onClick={saveProgram}>
-                {isEditing ? "Update Program" : "Save Program"}
-              </Button>
-            </ModalFooter>
-          </ModalContent>
-        </Modal>
-      )}
+            </HStack>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* User Enrollments Modal */}
+      <Modal
+        isOpen={isEnrollmentModalOpen}
+        onClose={onEnrollmentModalClose}
+        size="lg"
+      >
+        <ModalOverlay />
+        <ModalContent>
+          <ModalHeader>My Enrolled Programs</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {loadingEnrollments ? (
+              <Flex justify="center" py={8}>
+                <Spinner size="lg" color="teal.500" />
+              </Flex>
+            ) : userEnrollments.length === 0 ? (
+              <Box textAlign="center" py={8}>
+                <Text color="gray.500" mb={4}>
+                  You are not enrolled in any programs yet.
+                </Text>
+                <Button
+                  colorScheme="teal"
+                  onClick={() => {
+                    onEnrollmentModalClose();
+                  }}
+                >
+                  Browse Programs
+                </Button>
+              </Box>
+            ) : (
+              <VStack spacing={4} align="stretch">
+                {userEnrollments.map((enrollment) => (
+                  <Box
+                    key={enrollment.program_id}
+                    p={4}
+                    border="1px solid"
+                    borderColor="gray.200"
+                    borderRadius="md"
+                    bg="gray.50"
+                  >
+                    <Flex justify="space-between" align="start">
+                      <Box flex="1">
+                        <Text fontWeight="bold" mb={1}>
+                          {enrollment.program_overview?.Program_Name}
+                        </Text>
+                        <HStack spacing={2} mb={2}>
+                          <Badge colorScheme="teal" variant="subtle">
+                            {enrollment.program_overview?.Level}
+                          </Badge>
+                          <Badge colorScheme="blue" variant="subtle">
+                            {enrollment.program_overview?.Weeks} weeks
+                          </Badge>
+                        </HStack>
+                        <Text fontSize="sm" color="gray.600">
+                          Enrolled:{" "}
+                          {new Date(
+                            enrollment.enrolled_at
+                          ).toLocaleDateString()}
+                        </Text>
+                      </Box>
+                      <Button
+                        size="sm"
+                        colorScheme="red"
+                        variant="outline"
+                        onClick={() =>
+                          unenrollFromProgram(enrollment.program_id)
+                        }
+                        isLoading={enrolling === enrollment.program_id}
+                      >
+                        Unenroll
+                      </Button>
+                    </Flex>
+                  </Box>
+                ))}
+              </VStack>
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button onClick={onEnrollmentModalClose}>Close</Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 }
