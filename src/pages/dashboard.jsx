@@ -1,3 +1,4 @@
+import { WORKOUT_FOCUS_OPTIONS, getFocusType } from "../constants/workoutFocus";
 import { useState, useEffect, useMemo } from "react";
 import {
   Box,
@@ -229,13 +230,41 @@ function Dashboard() {
   };
 
   // Determine workout type based on focus
+  // Determine workout type based on focus
   const determineWorkoutType = (focus) => {
     if (!focus) return "general";
     const focusLower = focus.toLowerCase();
+    if (focusLower.includes("power") || focusLower.includes("speed"))
+      return "power";
     if (focusLower.includes("strength")) return "strength";
-    if (focusLower.includes("hypertrophy")) return "hypertrophy";
-    if (focusLower.includes("cardio")) return "cardio";
-    if (focusLower.includes("mobility")) return "mobility";
+    if (
+      focusLower.includes("hypertrophy") ||
+      focusLower.includes("muscle growth")
+    )
+      return "hypertrophy";
+    if (
+      focusLower.includes("muscular endurance") ||
+      focusLower.includes("endurance")
+    )
+      return "endurance";
+    if (
+      focusLower.includes("vo2") ||
+      focusLower.includes("aerobic") ||
+      focusLower.includes("maximal aerobic")
+    )
+      return "aerobic";
+    if (
+      focusLower.includes("steady state") ||
+      focusLower.includes("long duration")
+    )
+      return "cardio";
+    if (
+      focusLower.includes("mobility") ||
+      focusLower.includes("stability") ||
+      focusLower.includes("yoga")
+    )
+      return "mobility";
+    if (focusLower.includes("other")) return "other";
     return "general";
   };
 
@@ -691,13 +720,17 @@ function Dashboard() {
               value={workoutFilter}
               onChange={(e) => setWorkoutFilter(e.target.value)}
               size="sm"
-              w="150px"
+              w="200px"
             >
               <option value="all">All Workouts</option>
+              <option value="power">Power</option>
               <option value="strength">Strength</option>
               <option value="hypertrophy">Hypertrophy</option>
-              <option value="cardio">Cardio</option>
-              <option value="mobility">Mobility</option>
+              <option value="endurance">Muscular Endurance</option>
+              <option value="aerobic">Maximal Aerobic</option>
+              <option value="cardio">Steady State</option>
+              <option value="mobility">Mobility/Yoga</option>
+              <option value="other">Other</option>
             </Select>
             <Button
               leftIcon={<DownloadIcon />}
@@ -711,26 +744,39 @@ function Dashboard() {
         </Flex>
 
         {/* Legend */}
-        <Flex wrap="wrap" gap={4} mb={4} fontSize="sm">
+
+        <Flex wrap="wrap" gap={3} mb={4} fontSize="sm">
           <Flex align="center">
-            <Box w={4} h={4} bg="#d53f8c" borderRadius="sm" mr={2} />
+            <Box w={4} h={4} bg="red.300" borderRadius="sm" mr={2} />
+            <Text>Power</Text>
+          </Flex>
+          <Flex align="center">
+            <Box w={4} h={4} bg="pink.300" borderRadius="sm" mr={2} />
             <Text>Strength</Text>
           </Flex>
           <Flex align="center">
-            <Box w={4} h={4} bg="#38a169" borderRadius="sm" mr={2} />
+            <Box w={4} h={4} bg="green.300" borderRadius="sm" mr={2} />
             <Text>Hypertrophy</Text>
           </Flex>
           <Flex align="center">
-            <Box w={4} h={4} bg="#dd6b20" borderRadius="sm" mr={2} />
-            <Text>Cardio</Text>
+            <Box w={4} h={4} bg="yellow.300" borderRadius="sm" mr={2} />
+            <Text>Endurance</Text>
           </Flex>
           <Flex align="center">
-            <Box w={4} h={4} bg="#805ad5" borderRadius="sm" mr={2} />
-            <Text>Mobility</Text>
+            <Box w={4} h={4} bg="cyan.300" borderRadius="sm" mr={2} />
+            <Text>Aerobic</Text>
           </Flex>
           <Flex align="center">
-            <Box w={4} h={4} bg="#3182ce" borderRadius="sm" mr={2} />
-            <Text>General</Text>
+            <Box w={4} h={4} bg="orange.300" borderRadius="sm" mr={2} />
+            <Text>Steady State</Text>
+          </Flex>
+          <Flex align="center">
+            <Box w={4} h={4} bg="purple.300" borderRadius="sm" mr={2} />
+            <Text>Mobility/Yoga</Text>
+          </Flex>
+          <Flex align="center">
+            <Box w={4} h={4} bg="gray.300" borderRadius="sm" mr={2} />
+            <Text>Other</Text>
           </Flex>
         </Flex>
 

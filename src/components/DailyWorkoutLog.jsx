@@ -1,3 +1,4 @@
+import { WORKOUT_FOCUS_OPTIONS, getFocusType } from "../constants/workoutFocus";
 import { useState, useEffect, useRef } from "react";
 import {
   Box,
@@ -1179,15 +1180,35 @@ function DailyWorkoutLog({
               size={{ base: "md", md: "sm" }}
             />
           </FormControl>
-          <FormControl width={{ base: "full", md: "150px" }}>
+          <FormControl width={{ base: "full", md: "200px" }}>
             <FormLabel fontSize={{ base: "sm", md: "md" }}>Focus</FormLabel>
-            <Input
+            <Select
               value={programDetails.focus}
               onChange={(e) =>
                 handleProgramDetailsChange("focus", e.target.value)
               }
               size={{ base: "md", md: "sm" }}
-            />
+              placeholder="Select focus"
+            >
+              <option value="Power (Speed x Force)">
+                Power (Speed x Force)
+              </option>
+              <option value="Strength">Strength</option>
+              <option value="Hypertrophy (Muscle Growth)">
+                Hypertrophy (Muscle Growth)
+              </option>
+              <option value="Muscular Endurance">Muscular Endurance</option>
+              <option value="Maximal Aerobic Output (VO2 Max)">
+                Maximal Aerobic Output (VO2 Max)
+              </option>
+              <option value="Long Duration Steady State Exercise">
+                Long Duration Steady State Exercise
+              </option>
+              <option value="Mobility, Stability, Yoga">
+                Mobility, Stability, Yoga
+              </option>
+              <option value="Other">Other</option>
+            </Select>
           </FormControl>
         </Flex>
       </Box>
