@@ -656,6 +656,7 @@ function WorkoutPrograms() {
   };
 
   // Enhanced Exercise Search Component
+  // Enhanced Exercise Search Component - Fixed version with highlighting
   const ExerciseSearchInput = ({ onSelectExercise, currentValue = "" }) => {
     const [searchTerm, setSearchTerm] = useState(currentValue);
     const [showResults, setShowResults] = useState(false);
@@ -663,13 +664,30 @@ function WorkoutPrograms() {
     const [localFilteredExercises, setLocalFilteredExercises] = useState([]);
     const [localLoading, setLocalLoading] = useState(false);
 
-    // Enhanced search function with better matching
+    // Helper function to highlight search terms
+    const highlightSearchTerms = (text, searchTerms) => {
+      if (!text || !searchTerms.length) return text;
+
+      let highlightedText = text;
+      searchTerms.forEach((term) => {
+        const regex = new RegExp(
+          `(${term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`,
+          "gi"
+        );
+        highlightedText = highlightedText.replace(regex, "<mark>$1</mark>");
+      });
+
+      return highlightedText;
+    };
+
+    // Enhanced search function with better matching logic
     const performLocalSearch = (term) => {
       if (!term.trim()) {
         setLocalFilteredExercises([]);
         return;
       }
 
+      // Split search terms and clean them
       const searchTerms = term
         .toLowerCase()
         .trim()
@@ -693,34 +711,20 @@ function WorkoutPrograms() {
           exercise.Force_Type,
           exercise.Mechanics,
           exercise.Combination_Exercises,
-        ].filter(Boolean); // Remove null/undefined values
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
 
-        const searchableText = searchableFields.join(" ").toLowerCase();
-
-        // Multiple matching strategies
-        const exactMatch = searchableText.includes(term.toLowerCase());
+        // IMPROVED LOGIC: ALL search terms must be found
         const allTermsMatch = searchTerms.every((searchTerm) =>
-          searchableText.includes(searchTerm)
-        );
-        const exerciseNameMatch = exercise.Exercise?.toLowerCase().includes(
-          term.toLowerCase()
+          searchableFields.includes(searchTerm)
         );
 
-        // Word boundary matching for better results
-        const wordBoundaryMatch = searchTerms.some((searchTerm) => {
-          const regex = new RegExp(
-            `\\b${searchTerm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`,
-            "i"
-          );
-          return regex.test(searchableText);
-        });
-
-        return (
-          exactMatch || allTermsMatch || exerciseNameMatch || wordBoundaryMatch
-        );
+        return allTermsMatch;
       });
 
-      // Enhanced sorting algorithm
+      // Enhanced sorting algorithm with better relevance scoring
       const sortedResults = results.sort((a, b) => {
         const aIsFavorite = a.Favorite === "Yes" || a.Favorite === "Y";
         const bIsFavorite = b.Favorite === "Yes" || b.Favorite === "Y";
@@ -729,38 +733,85 @@ function WorkoutPrograms() {
         if (aIsFavorite && !bIsFavorite) return -1;
         if (!aIsFavorite && bIsFavorite) return 1;
 
-        // 2. Exact exercise name matches
+        // 2. Exact exercise name match
         const aExactMatch = a.Exercise?.toLowerCase() === term.toLowerCase();
         const bExactMatch = b.Exercise?.toLowerCase() === term.toLowerCase();
         if (aExactMatch && !bExactMatch) return -1;
         if (!aExactMatch && bExactMatch) return 1;
 
-        // 3. Exercise name starts with search term
-        const aStartsWith = a.Exercise?.toLowerCase().startsWith(
-          term.toLowerCase()
-        );
-        const bStartsWith = b.Exercise?.toLowerCase().startsWith(
-          term.toLowerCase()
-        );
-        if (aStartsWith && !bStartsWith) return -1;
-        if (!aStartsWith && bStartsWith) return 1;
+        // 3. Exercise name contains all terms in order
+        const aContainsInOrder = searchTerms.every((searchTerm, index) => {
+          const exerciseName = a.Exercise?.toLowerCase() || "";
+          if (index === 0) return exerciseName.includes(searchTerm);
 
-        // 4. Exercise name contains search term
-        const aContains = a.Exercise?.toLowerCase().includes(
-          term.toLowerCase()
-        );
-        const bContains = b.Exercise?.toLowerCase().includes(
-          term.toLowerCase()
-        );
-        if (aContains && !bContains) return -1;
-        if (!aContains && bContains) return 1;
+          // Check if current term appears after the previous term
+          const prevTerm = searchTerms[index - 1];
+          const prevIndex = exerciseName.indexOf(prevTerm);
+          const currentIndex = exerciseName.indexOf(searchTerm);
+          return prevIndex !== -1 && currentIndex > prevIndex;
+        });
 
-        // 5. Alphabetical order
+        const bContainsInOrder = searchTerms.every((searchTerm, index) => {
+          const exerciseName = b.Exercise?.toLowerCase() || "";
+          if (index === 0) return exerciseName.includes(searchTerm);
+
+          const prevTerm = searchTerms[index - 1];
+          const prevIndex = exerciseName.indexOf(prevTerm);
+          const currentIndex = exerciseName.indexOf(searchTerm);
+          return prevIndex !== -1 && currentIndex > prevIndex;
+        });
+
+        if (aContainsInOrder && !bContainsInOrder) return -1;
+        if (!aContainsInOrder && bContainsInOrder) return 1;
+
+        // 4. Exercise name starts with first search term
+        const aStartsWithFirst = a.Exercise?.toLowerCase().startsWith(
+          searchTerms[0]
+        );
+        const bStartsWithFirst = b.Exercise?.toLowerCase().startsWith(
+          searchTerms[0]
+        );
+        if (aStartsWithFirst && !bStartsWithFirst) return -1;
+        if (!aStartsWithFirst && bStartsWithFirst) return 1;
+
+        // 5. Count how many terms appear in the exercise name (more = better)
+        const aExerciseTermCount = searchTerms.filter((term) =>
+          a.Exercise?.toLowerCase().includes(term)
+        ).length;
+        const bExerciseTermCount = searchTerms.filter((term) =>
+          b.Exercise?.toLowerCase().includes(term)
+        ).length;
+
+        if (aExerciseTermCount !== bExerciseTermCount) {
+          return bExerciseTermCount - aExerciseTermCount; // Higher count first
+        }
+
+        // 6. Shorter exercise names first (more specific)
+        const aLength = a.Exercise?.length || 999;
+        const bLength = b.Exercise?.length || 999;
+        if (aLength !== bLength) {
+          return aLength - bLength;
+        }
+
+        // 7. Alphabetical order as final tiebreaker
         return a.Exercise?.localeCompare(b.Exercise || "") || 0;
       });
 
-      console.log(`Search for "${term}" found ${sortedResults.length} results`); // Debug log
-      setLocalFilteredExercises(sortedResults.slice(0, 25)); // Increased to 25 results
+      console.log(
+        `Search for "${term}" (terms: [${searchTerms.join(", ")}]) found ${
+          sortedResults.length
+        } results`
+      );
+
+      // Show top results in console for debugging
+      if (sortedResults.length > 0) {
+        console.log(
+          "Top 5 results:",
+          sortedResults.slice(0, 5).map((ex) => ex.Exercise)
+        );
+      }
+
+      setLocalFilteredExercises(sortedResults.slice(0, 25));
     };
 
     // Debounced search effect
@@ -774,7 +825,7 @@ function WorkoutPrograms() {
       const timeoutId = setTimeout(() => {
         performLocalSearch(searchTerm);
         setLocalLoading(false);
-      }, 200); // Reduced delay for faster response
+      }, 200);
 
       return () => {
         clearTimeout(timeoutId);
@@ -868,6 +919,11 @@ function WorkoutPrograms() {
                 {localFilteredExercises.map((exercise) => {
                   const isFavorite =
                     exercise.Favorite === "Yes" || exercise.Favorite === "Y";
+                  const searchTerms = searchTerm
+                    .toLowerCase()
+                    .trim()
+                    .split(/\s+/)
+                    .filter((t) => t.length > 0);
 
                   return (
                     <ExerciseDetailsPopover
@@ -888,9 +944,16 @@ function WorkoutPrograms() {
                         <HStack justify="space-between" align="start">
                           <VStack align="start" spacing={1} flex={1}>
                             <HStack>
-                              <Text fontWeight="medium" fontSize="sm">
-                                {exercise.Exercise}
-                              </Text>
+                              <Text
+                                fontWeight="medium"
+                                fontSize="sm"
+                                dangerouslySetInnerHTML={{
+                                  __html: highlightSearchTerms(
+                                    exercise.Exercise,
+                                    searchTerms
+                                  ),
+                                }}
+                              />
                               {isFavorite && (
                                 <Badge colorScheme="yellow" size="sm">
                                   ⭐
@@ -961,97 +1024,6 @@ function WorkoutPrograms() {
         )}
       </Box>
     );
-  };
-
-  // DELETE Add this temporary function to debug (remove after testing)
-  const debugExerciseSearch = () => {
-    console.log("Total exercises loaded:", exerciseLibrary.length);
-    console.log(
-      "Sample exercises:",
-      exerciseLibrary.slice(0, 5).map((ex) => ex.Exercise)
-    );
-
-    // Search for "goblet" specifically
-    const gobletExercises = exerciseLibrary.filter((ex) =>
-      ex.Exercise?.toLowerCase().includes("goblet")
-    );
-    console.log(
-      "Exercises containing 'goblet':",
-      gobletExercises.map((ex) => ex.Exercise)
-    );
-
-    // Search for "squat" specifically
-    const squatExercises = exerciseLibrary.filter((ex) =>
-      ex.Exercise?.toLowerCase().includes("squat")
-    );
-    console.log(
-      "Exercises containing 'squat':",
-      squatExercises.map((ex) => ex.Exercise)
-    );
-  };
-
-  // Call this in your useEffect after fetching exercises
-  useEffect(() => {
-    const initializeData = async () => {
-      console.log("🚀 Initializing application data...");
-
-      try {
-        await fetchPrograms();
-        console.log("✅ Programs loaded");
-
-        await fetchUserEnrollments();
-        console.log("✅ User enrollments loaded");
-
-        await fetchExerciseLibrary();
-        console.log("✅ Exercise library fetch completed");
-      } catch (error) {
-        console.error("💥 Error during initialization:", error);
-      }
-
-      // Debug after a delay
-      setTimeout(() => {
-        console.log("🔍 Final exercise library state:", exerciseLibrary.length);
-        debugExerciseSearch();
-      }, 2000);
-    };
-
-    initializeData();
-  }, []);
-
-  // DELETE Add this test function to check if the table exists and is accessible
-  const testDatabaseConnection = async () => {
-    try {
-      console.log("🧪 Testing database connection...");
-
-      // Test 1: Simple count query
-      const { count, error: countError } = await supabase
-        .from("Exercise Library")
-        .select("*", { count: "exact", head: true });
-
-      console.log("📊 Exercise count:", count, "Error:", countError);
-
-      // Test 2: Get just first 5 exercises with minimal fields
-      const { data: testData, error: testError } = await supabase
-        .from("Exercise Library")
-        .select("Exercise")
-        .limit(5);
-
-      console.log("🧪 Test query result:", testData, "Error:", testError);
-
-      // Test 3: Check table structure
-      const { data: structureData, error: structureError } = await supabase
-        .from("Exercise Library")
-        .select("*")
-        .limit(1);
-
-      console.log("🏗️ Table structure (first row):", structureData?.[0]);
-      console.log(
-        "🏗️ Available columns:",
-        structureData?.[0] ? Object.keys(structureData[0]) : "No data"
-      );
-    } catch (error) {
-      console.error("💥 Database test failed:", error);
-    }
   };
 
   // Fetch programs with correct schema
