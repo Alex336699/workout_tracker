@@ -301,12 +301,12 @@ function WorkoutPrograms() {
 
   // Stepper for program creation
   const steps = [
-    { title: "Goals", description: "Define program goals and overview" },
-    { title: "Structure", description: "Set up training structure" },
-    { title: "Progression", description: "Define progression rules" },
-    { title: "Week 1", description: "Create Week 1 template" },
-    { title: "Generate", description: "Auto-generate program" },
-    { title: "Fine-tune", description: "Adjust and finalize" },
+    { title: "Goals", description: "" }, // "Define program goals and overview"
+    { title: "Structure", description: "" }, // "Set up training structure"
+    { title: "Progression", description: "" }, // "Define progression rules"
+    { title: "Week 1", description: "" }, // "Create Week 1 template"
+    { title: "Generate", description: "" }, // "Auto-generate program"
+    { title: "Fine-tune", description: "" }, // "Adjust and finalize"
   ];
 
   const { activeStep, setActiveStep } = useSteps({
@@ -2306,6 +2306,19 @@ function WorkoutPrograms() {
                           <NumberDecrementStepper />
                         </NumberInputStepper>
                       </NumberInput>
+                    </FormControl>
+
+                    {/* NEW: Superset Field */}
+                    <FormControl>
+                      <FormLabel fontSize="sm">Superset</FormLabel>
+                      <Input
+                        size="sm"
+                        value={exercise.superset || ""}
+                        onChange={(e) =>
+                          updateExercise(index, "superset", e.target.value)
+                        }
+                        placeholder="e.g., A1, A2, B1..."
+                      />
                     </FormControl>
                   </Grid>
 
