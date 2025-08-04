@@ -640,15 +640,18 @@ function WorkoutPrograms() {
 
               {/* In-Depth Explanation */}
               {/* In-Depth Explanation - Updated to use Exercise_Notes */}
+              {/* In-Depth Explanation - Updated with clickable links */}
               {(exercise.Exercise_Notes ||
                 exercise["In-Depth_Explanation"]) && (
                 <Box>
                   <Text fontWeight="semibold" fontSize="sm" mb={2}>
                     Exercise Notes:
                   </Text>
-                  <Text fontSize="sm" color="gray.700">
-                    {exercise.Exercise_Notes ||
-                      exercise["In-Depth_Explanation"]}
+                  <Text fontSize="sm" color="gray.700" lineHeight="1.4">
+                    {renderTextWithLinks(
+                      exercise.Exercise_Notes ||
+                        exercise["In-Depth_Explanation"]
+                    )}
                   </Text>
                 </Box>
               )}
@@ -657,6 +660,40 @@ function WorkoutPrograms() {
         </PopoverContent>
       </Popover>
     );
+  };
+
+  // Add this helper function inside your WorkoutPrograms component (near other helper functions)
+  const renderTextWithLinks = (text) => {
+    if (!text) return null;
+
+    // Regular expression to detect URLs
+    const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+    // Split text by URLs and create clickable links
+    const parts = text.split(urlRegex);
+
+    return parts.map((part, index) => {
+      if (urlRegex.test(part)) {
+        // This part is a URL
+        return (
+          <Link
+            key={index}
+            href={part}
+            isExternal
+            color="blue.500"
+            fontWeight="medium"
+            _hover={{ textDecoration: "underline", color: "blue.600" }}
+          >
+            {part.includes("youtube.com") || part.includes("youtu.be")
+              ? "Watch Video 🎥"
+              : "View Link 🔗"}
+          </Link>
+        );
+      } else {
+        // This part is regular text
+        return part;
+      }
+    });
   };
 
   // Enhanced Exercise Search Component
@@ -2386,6 +2423,7 @@ function WorkoutPrograms() {
                       </SimpleGrid>
 
                       {/* Exercise Notes - Prioritize Exercise_Notes, fallback to In-Depth_Explanation */}
+                      {/* Exercise Notes - Updated with clickable links */}
                       {(exercise.exerciseDetails.Exercise_Notes ||
                         exercise.exerciseDetails["In-Depth_Explanation"]) && (
                         <Box
@@ -2405,8 +2443,10 @@ function WorkoutPrograms() {
                             📝 Exercise Notes:
                           </Text>
                           <Text fontSize="xs" color="gray.700" lineHeight="1.4">
-                            {exercise.exerciseDetails.Exercise_Notes ||
-                              exercise.exerciseDetails["In-Depth_Explanation"]}
+                            {renderTextWithLinks(
+                              exercise.exerciseDetails.Exercise_Notes ||
+                                exercise.exerciseDetails["In-Depth_Explanation"]
+                            )}
                           </Text>
                         </Box>
                       )}
