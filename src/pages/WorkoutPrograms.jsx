@@ -2312,145 +2312,174 @@ function WorkoutPrograms() {
                   {/* Exercise Details Preview */}
                   {/* Exercise Details Preview - Enhanced with Video */}
                   {/* Exercise Details Preview - Enhanced with Video and Exercise_Notes */}
+                  {/* Exercise Details Preview - Collapsible with Video and Exercise_Notes */}
                   {exercise.exerciseDetails && (
-                    <Box p={3} bg="blue.50" borderRadius="md" mb={3}>
-                      <HStack justify="space-between" mb={2}>
-                        <Text fontSize="sm" fontWeight="semibold">
-                          Exercise Details:
-                        </Text>
-                        {(exercise.exerciseDetails.Favorite === "Yes" ||
-                          exercise.exerciseDetails.Favorite === "Y") && (
-                          <Badge colorScheme="yellow" size="sm">
-                            ⭐ Favorite
-                          </Badge>
-                        )}
-                      </HStack>
-
-                      {/* Video Demonstration - Show prominently if available */}
-                      {exercise.exerciseDetails.Video_Demonstration && (
-                        <Box
-                          mb={3}
-                          p={2}
-                          bg="white"
-                          borderRadius="md"
-                          border="1px solid"
-                          borderColor="blue.200"
-                        >
-                          <Text
-                            fontSize="xs"
-                            fontWeight="semibold"
-                            mb={1}
-                            color="blue.600"
-                          >
-                            🎥 Video Demonstration:
-                          </Text>
-                          {exercise.exerciseDetails.Video_Demonstration.includes(
-                            "youtube.com"
-                          ) ||
-                          exercise.exerciseDetails.Video_Demonstration.includes(
-                            "youtu.be"
-                          ) ? (
-                            <Link
-                              href={
-                                exercise.exerciseDetails.Video_Demonstration
-                              }
-                              isExternal
-                              color="blue.500"
-                              fontSize="xs"
-                              fontWeight="medium"
-                              _hover={{
-                                textDecoration: "underline",
-                                color: "blue.600",
-                              }}
-                            >
-                              Watch on YouTube 🎥
-                            </Link>
-                          ) : exercise.exerciseDetails.Video_Demonstration.startsWith(
-                              "http"
-                            ) ? (
-                            <Link
-                              href={
-                                exercise.exerciseDetails.Video_Demonstration
-                              }
-                              isExternal
-                              color="blue.500"
-                              fontSize="xs"
-                              fontWeight="medium"
-                              _hover={{
-                                textDecoration: "underline",
-                                color: "blue.600",
-                              }}
-                            >
-                              Watch Video 🎥
-                            </Link>
-                          ) : (
-                            <Text fontSize="xs" color="gray.600">
-                              {exercise.exerciseDetails.Video_Demonstration}
-                            </Text>
-                          )}
-                        </Box>
-                      )}
-
-                      <SimpleGrid
-                        columns={{ base: 1, md: 2 }}
-                        spacing={2}
-                        fontSize="xs"
+                    <Accordion allowToggle mt={3}>
+                      <AccordionItem
+                        border="1px solid"
+                        borderColor="blue.200"
+                        borderRadius="md"
                       >
-                        {exercise.exerciseDetails.Target_Muscle_Group && (
-                          <Text>
-                            <strong>Target:</strong>{" "}
-                            {exercise.exerciseDetails.Target_Muscle_Group}
-                          </Text>
-                        )}
-                        {exercise.exerciseDetails.Primary_Equipment && (
-                          <Text>
-                            <strong>Equipment:</strong>{" "}
-                            {exercise.exerciseDetails.Primary_Equipment}
-                          </Text>
-                        )}
-                        {exercise.exerciseDetails["1_RM_Alex"] && (
-                          <Text>
-                            <strong>1RM:</strong>{" "}
-                            {exercise.exerciseDetails["1_RM_Alex"]}kg
-                          </Text>
-                        )}
-                        {exercise.exerciseDetails.Difficulty_Level && (
-                          <Text>
-                            <strong>Difficulty:</strong>{" "}
-                            {exercise.exerciseDetails.Difficulty_Level}
-                          </Text>
-                        )}
-                      </SimpleGrid>
-
-                      {/* Exercise Notes - Prioritize Exercise_Notes, fallback to In-Depth_Explanation */}
-                      {/* Exercise Notes - Updated with clickable links */}
-                      {(exercise.exerciseDetails.Exercise_Notes ||
-                        exercise.exerciseDetails["In-Depth_Explanation"]) && (
-                        <Box
-                          mt={2}
-                          p={2}
-                          bg="white"
+                        <AccordionButton
+                          _hover={{ bg: "blue.50" }}
                           borderRadius="md"
-                          border="1px solid"
-                          borderColor="gray.200"
+                          p={3}
                         >
-                          <Text
+                          <Box flex="1" textAlign="left">
+                            <HStack>
+                              <Text
+                                fontSize="sm"
+                                fontWeight="semibold"
+                                color="blue.600"
+                              >
+                                📋 Exercise Details
+                              </Text>
+                              {(exercise.exerciseDetails.Favorite === "Yes" ||
+                                exercise.exerciseDetails.Favorite === "Y") && (
+                                <Badge colorScheme="yellow" size="sm">
+                                  ⭐ Favorite
+                                </Badge>
+                              )}
+                            </HStack>
+                          </Box>
+                          <AccordionIcon color="blue.600" />
+                        </AccordionButton>
+
+                        <AccordionPanel pb={4} bg="blue.50">
+                          {/* Video Demonstration - Show prominently if available */}
+                          {exercise.exerciseDetails.Video_Demonstration && (
+                            <Box
+                              mb={3}
+                              p={2}
+                              bg="white"
+                              borderRadius="md"
+                              border="1px solid"
+                              borderColor="blue.200"
+                            >
+                              <Text
+                                fontSize="xs"
+                                fontWeight="semibold"
+                                mb={1}
+                                color="blue.600"
+                              >
+                                🎥 Video Demonstration:
+                              </Text>
+                              {exercise.exerciseDetails.Video_Demonstration.includes(
+                                "youtube.com"
+                              ) ||
+                              exercise.exerciseDetails.Video_Demonstration.includes(
+                                "youtu.be"
+                              ) ? (
+                                <Link
+                                  href={
+                                    exercise.exerciseDetails.Video_Demonstration
+                                  }
+                                  isExternal
+                                  color="blue.500"
+                                  fontSize="xs"
+                                  fontWeight="medium"
+                                  _hover={{
+                                    textDecoration: "underline",
+                                    color: "blue.600",
+                                  }}
+                                >
+                                  Watch on YouTube 🎥
+                                </Link>
+                              ) : exercise.exerciseDetails.Video_Demonstration.startsWith(
+                                  "http"
+                                ) ? (
+                                <Link
+                                  href={
+                                    exercise.exerciseDetails.Video_Demonstration
+                                  }
+                                  isExternal
+                                  color="blue.500"
+                                  fontSize="xs"
+                                  fontWeight="medium"
+                                  _hover={{
+                                    textDecoration: "underline",
+                                    color: "blue.600",
+                                  }}
+                                >
+                                  Watch Video 🎥
+                                </Link>
+                              ) : (
+                                <Text fontSize="xs" color="gray.600">
+                                  {exercise.exerciseDetails.Video_Demonstration}
+                                </Text>
+                              )}
+                            </Box>
+                          )}
+
+                          <SimpleGrid
+                            columns={{ base: 1, md: 2 }}
+                            spacing={2}
                             fontSize="xs"
-                            fontWeight="semibold"
-                            mb={1}
-                            color="gray.600"
+                            mb={3}
                           >
-                            📝 Exercise Notes:
-                          </Text>
-                          <Text fontSize="xs" color="gray.700" lineHeight="1.4">
-                            {renderTextWithLinks(
-                              exercise.exerciseDetails.Exercise_Notes ||
-                                exercise.exerciseDetails["In-Depth_Explanation"]
+                            {exercise.exerciseDetails.Target_Muscle_Group && (
+                              <Text>
+                                <strong>Target:</strong>{" "}
+                                {exercise.exerciseDetails.Target_Muscle_Group}
+                              </Text>
                             )}
-                          </Text>
-                        </Box>
-                      )}
-                    </Box>
+                            {exercise.exerciseDetails.Primary_Equipment && (
+                              <Text>
+                                <strong>Equipment:</strong>{" "}
+                                {exercise.exerciseDetails.Primary_Equipment}
+                              </Text>
+                            )}
+                            {exercise.exerciseDetails["1_RM_Alex"] && (
+                              <Text>
+                                <strong>1RM:</strong>{" "}
+                                {exercise.exerciseDetails["1_RM_Alex"]}kg
+                              </Text>
+                            )}
+                            {exercise.exerciseDetails.Difficulty_Level && (
+                              <Text>
+                                <strong>Difficulty:</strong>{" "}
+                                {exercise.exerciseDetails.Difficulty_Level}
+                              </Text>
+                            )}
+                          </SimpleGrid>
+
+                          {/* Exercise Notes - Prioritize Exercise_Notes, fallback to In-Depth_Explanation */}
+                          {(exercise.exerciseDetails.Exercise_Notes ||
+                            exercise.exerciseDetails[
+                              "In-Depth_Explanation"
+                            ]) && (
+                            <Box
+                              p={2}
+                              bg="white"
+                              borderRadius="md"
+                              border="1px solid"
+                              borderColor="gray.200"
+                            >
+                              <Text
+                                fontSize="xs"
+                                fontWeight="semibold"
+                                mb={1}
+                                color="gray.600"
+                              >
+                                📝 Exercise Notes:
+                              </Text>
+                              <Text
+                                fontSize="xs"
+                                color="gray.700"
+                                lineHeight="1.4"
+                              >
+                                {renderTextWithLinks(
+                                  exercise.exerciseDetails.Exercise_Notes ||
+                                    exercise.exerciseDetails[
+                                      "In-Depth_Explanation"
+                                    ]
+                                )}
+                              </Text>
+                            </Box>
+                          )}
+                        </AccordionPanel>
+                      </AccordionItem>
+                    </Accordion>
                   )}
 
                   <Flex justify="space-between" align="center">
