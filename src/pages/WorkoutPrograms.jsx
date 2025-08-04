@@ -356,6 +356,7 @@ function WorkoutPrograms() {
             Exercise,
             Video_Demonstration,
             "In-Depth_Explanation",
+            Exercise_Notes,
             Target_Muscle_Group,
             Primary_Equipment,
             Favorite,
@@ -638,13 +639,16 @@ function WorkoutPrograms() {
               )}
 
               {/* In-Depth Explanation */}
-              {exercise["In-Depth_Explanation"] && (
+              {/* In-Depth Explanation - Updated to use Exercise_Notes */}
+              {(exercise.Exercise_Notes ||
+                exercise["In-Depth_Explanation"]) && (
                 <Box>
                   <Text fontWeight="semibold" fontSize="sm" mb={2}>
                     Exercise Notes:
                   </Text>
                   <Text fontSize="sm" color="gray.700">
-                    {exercise["In-Depth_Explanation"]}
+                    {exercise.Exercise_Notes ||
+                      exercise["In-Depth_Explanation"]}
                   </Text>
                 </Box>
               )}
@@ -2269,6 +2273,8 @@ function WorkoutPrograms() {
                   </Grid>
 
                   {/* Exercise Details Preview */}
+                  {/* Exercise Details Preview - Enhanced with Video */}
+                  {/* Exercise Details Preview - Enhanced with Video and Exercise_Notes */}
                   {exercise.exerciseDetails && (
                     <Box p={3} bg="blue.50" borderRadius="md" mb={3}>
                       <HStack justify="space-between" mb={2}>
@@ -2282,6 +2288,72 @@ function WorkoutPrograms() {
                           </Badge>
                         )}
                       </HStack>
+
+                      {/* Video Demonstration - Show prominently if available */}
+                      {exercise.exerciseDetails.Video_Demonstration && (
+                        <Box
+                          mb={3}
+                          p={2}
+                          bg="white"
+                          borderRadius="md"
+                          border="1px solid"
+                          borderColor="blue.200"
+                        >
+                          <Text
+                            fontSize="xs"
+                            fontWeight="semibold"
+                            mb={1}
+                            color="blue.600"
+                          >
+                            🎥 Video Demonstration:
+                          </Text>
+                          {exercise.exerciseDetails.Video_Demonstration.includes(
+                            "youtube.com"
+                          ) ||
+                          exercise.exerciseDetails.Video_Demonstration.includes(
+                            "youtu.be"
+                          ) ? (
+                            <Link
+                              href={
+                                exercise.exerciseDetails.Video_Demonstration
+                              }
+                              isExternal
+                              color="blue.500"
+                              fontSize="xs"
+                              fontWeight="medium"
+                              _hover={{
+                                textDecoration: "underline",
+                                color: "blue.600",
+                              }}
+                            >
+                              Watch on YouTube 🎥
+                            </Link>
+                          ) : exercise.exerciseDetails.Video_Demonstration.startsWith(
+                              "http"
+                            ) ? (
+                            <Link
+                              href={
+                                exercise.exerciseDetails.Video_Demonstration
+                              }
+                              isExternal
+                              color="blue.500"
+                              fontSize="xs"
+                              fontWeight="medium"
+                              _hover={{
+                                textDecoration: "underline",
+                                color: "blue.600",
+                              }}
+                            >
+                              Watch Video 🎥
+                            </Link>
+                          ) : (
+                            <Text fontSize="xs" color="gray.600">
+                              {exercise.exerciseDetails.Video_Demonstration}
+                            </Text>
+                          )}
+                        </Box>
+                      )}
+
                       <SimpleGrid
                         columns={{ base: 1, md: 2 }}
                         spacing={2}
@@ -2312,12 +2384,40 @@ function WorkoutPrograms() {
                           </Text>
                         )}
                       </SimpleGrid>
+
+                      {/* Exercise Notes - Prioritize Exercise_Notes, fallback to In-Depth_Explanation */}
+                      {(exercise.exerciseDetails.Exercise_Notes ||
+                        exercise.exerciseDetails["In-Depth_Explanation"]) && (
+                        <Box
+                          mt={2}
+                          p={2}
+                          bg="white"
+                          borderRadius="md"
+                          border="1px solid"
+                          borderColor="gray.200"
+                        >
+                          <Text
+                            fontSize="xs"
+                            fontWeight="semibold"
+                            mb={1}
+                            color="gray.600"
+                          >
+                            📝 Exercise Notes:
+                          </Text>
+                          <Text fontSize="xs" color="gray.700" lineHeight="1.4">
+                            {exercise.exerciseDetails.Exercise_Notes ||
+                              exercise.exerciseDetails["In-Depth_Explanation"]}
+                          </Text>
+                        </Box>
+                      )}
                     </Box>
                   )}
 
                   <Flex justify="space-between" align="center">
                     <FormControl width="200px">
-                      <FormLabel fontSize="sm">Exercise Notes</FormLabel>
+                      <FormLabel fontSize="sm">
+                        Exercise Notes (Program)
+                      </FormLabel>
                       <Input
                         size="sm"
                         value={exercise.exercise_program_note || ""}
