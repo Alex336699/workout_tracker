@@ -1,5 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { Crypto } from '@peculiar/webcrypto'
+
+// Node 20+ Crypto Fix
+if (typeof globalThis.crypto === 'undefined') {
+  globalThis.crypto = new Crypto()
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -12,4 +18,10 @@ export default defineConfig({
     host: true,
     strictPort: false,
   },
+  optimizeDeps: {
+    esbuildOptions: {
+      target: 'es2020',
+      supported: { bigint: true }
+    }
+  }
 });
