@@ -1690,10 +1690,8 @@ function WorkoutPrograms() {
       <FormControl isRequired>
         <FormLabel>Training Structure Type</FormLabel>
         <RadioGroup
-          ref={(el) => (inputRefs.current["Training_Structure_Type"] = el)}
           value={trainingStructure.type}
           onChange={(value) => setTrainingStructureCallback({ type: value })}
-          onFocus={() => handleInputFocus("Training_Structure_Type")}
         >
           <VStack align="start" spacing={3}>
             {TRAINING_STRUCTURES.map((structure) => (
@@ -1705,7 +1703,26 @@ function WorkoutPrograms() {
                 borderRadius="md"
                 width="100%"
               >
-                <Radio value={structure.value} mb={2}>
+                <Radio
+                  ref={(el) =>
+                    (inputRefs.current[
+                      `Training_Structure_Type_${structure.value}`
+                    ] = el)
+                  }
+                  value={structure.value}
+                  mb={2}
+                  onFocus={() =>
+                    handleInputFocus(
+                      `Training_Structure_Type_${structure.value}`
+                    )
+                  }
+                  onBlur={() => {
+                    setActiveInput(null);
+                    console.log(
+                      `Blurred: Training_Structure_Type_${structure.value}`
+                    ); // Debug
+                  }}
+                >
                   <Text fontWeight="semibold">{structure.label}</Text>
                 </Radio>
                 <Text fontSize="sm" color="gray.600" ml={6}>
@@ -1766,13 +1783,17 @@ function WorkoutPrograms() {
               ref={(el) => (inputRefs.current["Training_Days_Per_Week"] = el)}
               placeholder="Enter days"
               onFocus={() => handleInputFocus("Training_Days_Per_Week")}
+              onBlur={() => {
+                setActiveInput(null);
+                console.log("Blurred: Training_Days_Per_Week"); // Debug
+              }}
             />
             <NumberInputStepper
               data-testid="number-input-stepper"
               onClick={() => handleInputFocus("Training_Days_Per_Week")}
             >
-              <NumberIncrementStepper />
-              <NumberDecrementStepper />
+              <NumberIncrementStepper data-testid="number-increment-stepper" />
+              <NumberDecrementStepper data-testid="number-decrement-stepper" />
             </NumberInputStepper>
           </NumberInput>
         </FormControl>
@@ -1793,13 +1814,17 @@ function WorkoutPrograms() {
               ref={(el) => (inputRefs.current["Sessions_Per_Day"] = el)}
               placeholder="Enter sessions"
               onFocus={() => handleInputFocus("Sessions_Per_Day")}
+              onBlur={() => {
+                setActiveInput(null);
+                console.log("Blurred: Sessions_Per_Day"); // Debug
+              }}
             />
             <NumberInputStepper
               data-testid="number-input-stepper"
               onClick={() => handleInputFocus("Sessions_Per_Day")}
             >
-              <NumberIncrementStepper />
-              <NumberDecrementStepper />
+              <NumberIncrementStepper data-testid="number-increment-stepper" />
+              <NumberDecrementStepper data-testid="number-decrement-stepper" />
             </NumberInputStepper>
           </NumberInput>
         </FormControl>
