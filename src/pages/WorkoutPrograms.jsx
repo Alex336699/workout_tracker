@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { debounce } from "lodash"; // Ensure lodash is installed (npm install lodash)
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import {
   Box,
   Heading,
@@ -202,6 +203,27 @@ function WorkoutPrograms() {
     user_id: null,
   });
 
+  // Utility to debounce state updates
+  const debounce = (func, wait) => {
+    let timeout;
+    return (...args) => {
+      clearTimeout(timeout);
+      timeout = setTimeout(() => func(...args), wait);
+    };
+  };
+
+  // Track the currently focused input
+  const [activeInput, setActiveInput] = useState(null);
+  const inputRefs = useRef({});
+  const lastActiveInput = useRef(null);
+
+  // Handle input focus to store the active input field
+  const handleInputFocus = useCallback((field) => {
+    setActiveInput(field);
+    lastActiveInput.current = field;
+    // console.log(`Focused: ${field}`); // Debug: Log focused field
+  }, []);
+
   // Step 2: Training Structure
   const [trainingStructure, setTrainingStructure] = useState({
     type: "",
@@ -209,6 +231,47 @@ function WorkoutPrograms() {
     sessionsPerDay: 1,
     customStructure: {},
   });
+
+  // Memoized setProgramOverview with debounce
+  const setProgramOverviewCallback = useCallback(
+    debounce((newState) => {
+      setProgramOverview((prev) => {
+        // console.log("Updating programOverview:", newState); // Debug: Log state update
+        return { ...prev, ...newState };
+      });
+    }, 50),
+    []
+  );
+
+  // Memoized setTrainingStructure with debounce
+  const setTrainingStructureCallback = useCallback(
+    debounce((newState) => {
+      setTrainingStructure((prev) => {
+        // console.log("Updating trainingStructure:", newState); // Debug: Log state update
+        return { ...prev, ...newState };
+      });
+    }, 50),
+    []
+  );
+
+  // Focus restoration for unexpected blur due to re-renders
+  useEffect(() => {
+    if (activeInput && inputRefs.current[activeInput]) {
+      const currentInput = inputRefs.current[activeInput];
+      const activeElement = document.activeElement;
+
+      // Only restore focus if the current input is not focused and no other input is focused
+      if (
+        activeElement !== currentInput &&
+        !Object.values(inputRefs.current).includes(activeElement) &&
+        document.contains(currentInput)
+      ) {
+        // console.log(`Restoring focus to: ${activeInput}`); // Debug: Log focus restoration
+        currentInput.focus();
+      }
+    }
+  }, [activeInput, programOverview, trainingStructure]);
+  // delete? necessary?
 
   // Step 3: Progression Rules
   const [progressionRules, setProgressionRules] = useState({
@@ -1377,6 +1440,7 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Program Name</FormLabel>
           <Input
+            ref={(el) => (inputRefs.current["Program_Name"] = el)} // Add this
             value={programOverview.Program_Name}
             onChange={(e) =>
               setProgramOverview((prev) => ({
@@ -1384,6 +1448,7 @@ function WorkoutPrograms() {
                 Program_Name: e.target.value,
               }))
             }
+            onFocus={() => handleInputFocus("Program_Name")} // Add focus handler
             placeholder="e.g., Strength Building Phase 1"
           />
         </FormControl>
@@ -1391,10 +1456,15 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Training Level</FormLabel>
           <Select
+            ref={(el) => (inputRefs.current["Level"] = el)} // Add this
             value={programOverview.Level}
             onChange={(e) =>
-              setProgramOverview((prev) => ({ ...prev, Level: e.target.value }))
+              setProgramOverview((prev) => ({
+                ...prev,
+                Level: e.target.value,
+              }))
             }
+            onFocus={() => handleInputFocus("Level")} // Add focus handler
             placeholder="Select training level"
           >
             <option value="Beginner">Beginner (0-1 years)</option>
@@ -1407,10 +1477,15 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Primary Focus</FormLabel>
           <Select
+            ref={(el) => (inputRefs.current["Focus"] = el)} // Add this
             value={programOverview.Focus}
             onChange={(e) =>
-              setProgramOverview((prev) => ({ ...prev, Focus: e.target.value }))
+              setProgramOverview((prev) => ({
+                ...prev,
+                Focus: e.target.value,
+              }))
             }
+            onFocus={() => handleInputFocus("Focus")} // Add focus handler
             placeholder="Select primary focus"
           >
             {WORKOUT_FOCUS_OPTIONS.map((option) => (
@@ -1426,17 +1501,22 @@ function WorkoutPrograms() {
           <NumberInput
             value={programOverview.Program_Length_in_Weeks || ""}
             onChange={(value) =>
-              setProgramOverview((prev) => ({
-                ...prev,
+              setProgramOverviewCallback({
                 Program_Length_in_Weeks: parseInt(value) || null,
-                Weeks: value,
-              }))
+              })
             }
             min={1}
             max={52}
           >
-            <NumberInputField placeholder="Enter weeks" />
-            <NumberInputStepper>
+            <NumberInputField
+              ref={(el) => (inputRefs.current["Program_Length_in_Weeks"] = el)}
+              placeholder="Enter weeks"
+              onFocus={() => handleInputFocus("Program_Length_in_Weeks")}
+            />
+            <NumberInputStepper
+              data-testid="number-input-stepper" // Added for click detection
+              onClick={() => handleInputFocus("Program_Length_in_Weeks")} // Simplified to update activeInput only
+            >
               <NumberIncrementStepper />
               <NumberDecrementStepper />
             </NumberInputStepper>
@@ -1447,6 +1527,7 @@ function WorkoutPrograms() {
       <FormControl>
         <FormLabel>Program Description</FormLabel>
         <Textarea
+          ref={(el) => (inputRefs.current["Program_Description"] = el)}
           value={programOverview.Program_Description}
           onChange={(e) =>
             setProgramOverview((prev) => ({
@@ -1454,6 +1535,7 @@ function WorkoutPrograms() {
               Program_Description: e.target.value,
             }))
           }
+          onFocus={() => handleInputFocus("Program_Description")}
           placeholder="Describe the program's objectives, methodology, and target outcomes..."
           rows={4}
         />
@@ -1465,13 +1547,22 @@ function WorkoutPrograms() {
           <NumberInput
             value={programOverview.Days_Per_Week || ""}
             onChange={(value) =>
-              setProgramOverview((prev) => ({ ...prev, Days_Per_Week: value }))
+              setProgramOverviewCallback({
+                Days_Per_Week: parseInt(value) || null,
+              })
             }
             min={1}
             max={7}
           >
-            <NumberInputField />
-            <NumberInputStepper>
+            <NumberInputField
+              ref={(el) => (inputRefs.current["Days_Per_Week"] = el)}
+              placeholder="Enter days"
+              onFocus={() => handleInputFocus("Days_Per_Week")}
+            />
+            <NumberInputStepper
+              data-testid="number-input-stepper" // Added for click detection
+              onClick={() => handleInputFocus("Days_Per_Week")} // Simplified to update activeInput only
+            >
               <NumberIncrementStepper />
               <NumberDecrementStepper />
             </NumberInputStepper>
@@ -1481,6 +1572,7 @@ function WorkoutPrograms() {
         <FormControl>
           <FormLabel>Time Per Workout</FormLabel>
           <Input
+            ref={(el) => (inputRefs.current["Time_Per_Workout"] = el)}
             value={programOverview.Time_Per_Workout}
             onChange={(e) =>
               setProgramOverview((prev) => ({
@@ -1488,6 +1580,7 @@ function WorkoutPrograms() {
                 Time_Per_Workout: e.target.value,
               }))
             }
+            onFocus={() => handleInputFocus("Time_Per_Workout")}
             placeholder="e.g., 60-90 minutes"
           />
         </FormControl>
@@ -1495,6 +1588,7 @@ function WorkoutPrograms() {
         <FormControl>
           <FormLabel>Equipment Needed</FormLabel>
           <Input
+            ref={(el) => (inputRefs.current["Equipment"] = el)}
             value={programOverview.Equipment}
             onChange={(e) =>
               setProgramOverview((prev) => ({
@@ -1502,88 +1596,81 @@ function WorkoutPrograms() {
                 Equipment: e.target.value,
               }))
             }
+            onFocus={() => handleInputFocus("Equipment")}
             placeholder="e.g., Barbell, Dumbbells, Gym"
           />
         </FormControl>
       </SimpleGrid>
 
-      <Accordion allowToggle>
-        <AccordionItem>
-          <AccordionButton>
-            <Box flex="1" textAlign="left">
-              <Text fontWeight="semibold">Advanced Options</Text>
-            </Box>
-            <AccordionIcon />
-          </AccordionButton>
-          <AccordionPanel pb={4}>
-            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-              <FormControl>
-                <FormLabel>Key Training Focus</FormLabel>
-                <Textarea
-                  value={programOverview.Key_Training_Focus}
-                  onChange={(e) =>
-                    setProgramOverview((prev) => ({
-                      ...prev,
-                      Key_Training_Focus: e.target.value,
-                    }))
-                  }
-                  placeholder="Specific training emphases..."
-                  rows={3}
-                />
-              </FormControl>
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+        <FormControl>
+          <FormLabel>Key Training Focus</FormLabel>
+          <Textarea
+            ref={(el) => (inputRefs.current["Key_Training_Focus"] = el)}
+            value={programOverview.Key_Training_Focus}
+            onChange={(e) =>
+              setProgramOverviewCallback({
+                Key_Training_Focus: e.target.value,
+              })
+            }
+            onFocus={() => handleInputFocus("Key_Training_Focus")}
+            placeholder="Specific training emphases..."
+            rows={3}
+          />
+        </FormControl>
 
-              <FormControl>
-                <FormLabel>Key Adaptations</FormLabel>
-                <Textarea
-                  value={programOverview.Key_Adaptations}
-                  onChange={(e) =>
-                    setProgramOverview((prev) => ({
-                      ...prev,
-                      Key_Adaptations: e.target.value,
-                    }))
-                  }
-                  placeholder="Expected physiological adaptations..."
-                  rows={3}
-                />
-              </FormControl>
+        <FormControl>
+          <FormLabel>Key Adaptations</FormLabel>
+          <Textarea
+            ref={(el) => (inputRefs.current["Key_Adaptations"] = el)}
+            value={programOverview.Key_Adaptations}
+            onChange={(e) =>
+              setProgramOverviewCallback({
+                Key_Adaptations: e.target.value,
+              })
+            }
+            onFocus={() => handleInputFocus("Key_Adaptations")}
+            placeholder="Expected physiological adaptations..."
+            rows={3}
+          />
+        </FormControl>
 
-              <FormControl>
-                <FormLabel>Muscle Engagement</FormLabel>
-                <Input
-                  value={programOverview.MUSCLE_ENGAGEMENT}
-                  onChange={(e) =>
-                    setProgramOverview((prev) => ({
-                      ...prev,
-                      MUSCLE_ENGAGEMENT: e.target.value,
-                    }))
-                  }
-                  placeholder="Primary muscle groups targeted"
-                />
-              </FormControl>
+        <FormControl>
+          <FormLabel>Muscle Engagement</FormLabel>
+          <Input
+            ref={(el) => (inputRefs.current["MUSCLE_ENGAGEMENT"] = el)}
+            value={programOverview.MUSCLE_ENGAGEMENT}
+            onChange={(e) =>
+              setProgramOverviewCallback({
+                MUSCLE_ENGAGEMENT: e.target.value,
+              })
+            }
+            onFocus={() => handleInputFocus("MUSCLE_ENGAGEMENT")}
+            placeholder="Primary muscle groups targeted"
+          />
+        </FormControl>
 
-              <FormControl>
-                <FormLabel>Preferred Season</FormLabel>
-                <Select
-                  value={programOverview.Prefered_Season}
-                  onChange={(e) =>
-                    setProgramOverview((prev) => ({
-                      ...prev,
-                      Prefered_Season: e.target.value,
-                    }))
-                  }
-                  placeholder="Select season"
-                >
-                  <option value="Spring">Spring</option>
-                  <option value="Summer">Summer</option>
-                  <option value="Fall">Fall</option>
-                  <option value="Winter">Winter</option>
-                  <option value="Year-round">Year-round</option>
-                </Select>
-              </FormControl>
-            </SimpleGrid>
-          </AccordionPanel>
-        </AccordionItem>
-      </Accordion>
+        <FormControl>
+          <FormLabel>Preferred Season</FormLabel>
+          <Select
+            ref={(el) => (inputRefs.current["Prefered_Season"] = el)}
+            value={programOverview.Prefered_Season}
+            onChange={(e) =>
+              setProgramOverviewCallback({
+                Prefered_Season: e.target.value,
+              })
+            }
+            onFocus={() => handleInputFocus("Prefered_Season")}
+            placeholder="Select season"
+          >
+            <option value="Spring">Spring</option>
+            <option value="Summer">Summer</option>
+            <option value="Fall">Fall</option>
+            <option value="Winter">Winter</option>
+            <option value="Year-round">Year-round</option>
+          </Select>
+        </FormControl>
+      </SimpleGrid>
     </VStack>
   );
 
@@ -1603,10 +1690,10 @@ function WorkoutPrograms() {
       <FormControl isRequired>
         <FormLabel>Training Structure Type</FormLabel>
         <RadioGroup
+          ref={(el) => (inputRefs.current["Training_Structure_Type"] = el)}
           value={trainingStructure.type}
-          onChange={(value) =>
-            setTrainingStructure((prev) => ({ ...prev, type: value }))
-          }
+          onChange={(value) => setTrainingStructureCallback({ type: value })}
+          onFocus={() => handleInputFocus("Training_Structure_Type")}
         >
           <VStack align="start" spacing={3}>
             {TRAINING_STRUCTURES.map((structure) => (
@@ -1668,16 +1755,22 @@ function WorkoutPrograms() {
           <NumberInput
             value={trainingStructure.daysPerWeek}
             onChange={(value) =>
-              setTrainingStructure((prev) => ({
-                ...prev,
+              setTrainingStructureCallback({
                 daysPerWeek: parseInt(value) || 3,
-              }))
+              })
             }
             min={1}
             max={7}
           >
-            <NumberInputField />
-            <NumberInputStepper>
+            <NumberInputField
+              ref={(el) => (inputRefs.current["Training_Days_Per_Week"] = el)}
+              placeholder="Enter days"
+              onFocus={() => handleInputFocus("Training_Days_Per_Week")}
+            />
+            <NumberInputStepper
+              data-testid="number-input-stepper"
+              onClick={() => handleInputFocus("Training_Days_Per_Week")}
+            >
               <NumberIncrementStepper />
               <NumberDecrementStepper />
             </NumberInputStepper>
@@ -1689,16 +1782,22 @@ function WorkoutPrograms() {
           <NumberInput
             value={trainingStructure.sessionsPerDay}
             onChange={(value) =>
-              setTrainingStructure((prev) => ({
-                ...prev,
+              setTrainingStructureCallback({
                 sessionsPerDay: parseInt(value) || 1,
-              }))
+              })
             }
             min={1}
             max={3}
           >
-            <NumberInputField />
-            <NumberInputStepper>
+            <NumberInputField
+              ref={(el) => (inputRefs.current["Sessions_Per_Day"] = el)}
+              placeholder="Enter sessions"
+              onFocus={() => handleInputFocus("Sessions_Per_Day")}
+            />
+            <NumberInputStepper
+              data-testid="number-input-stepper"
+              onClick={() => handleInputFocus("Sessions_Per_Day")}
+            >
               <NumberIncrementStepper />
               <NumberDecrementStepper />
             </NumberInputStepper>
@@ -1707,7 +1806,6 @@ function WorkoutPrograms() {
       </SimpleGrid>
     </VStack>
   );
-
   // Step 3: Progression Rules Component
   const renderStep3Progression = () => (
     <VStack spacing={6} align="stretch">
