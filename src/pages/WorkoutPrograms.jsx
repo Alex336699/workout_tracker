@@ -101,6 +101,14 @@ import {
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
 
+/*
+// Add this ref for input control
+const programNameRef = useRef(null);
+const descriptionRef = useRef(null);
+const timeWorkoutRef = useRef(null);
+const equipmentRef = useRef(null);
+*/
+
 // Constants for workout focus options
 const WORKOUT_FOCUS_OPTIONS = [
   { value: "strength", label: "Strength" },
@@ -164,6 +172,7 @@ const TRAINING_STRUCTURES = [
   },
 ];
 
+
 function WorkoutPrograms() {
   // Main state
   const [programs, setPrograms] = useState([]);
@@ -172,6 +181,9 @@ function WorkoutPrograms() {
   const [successMessage, setSuccessMessage] = useState(null);
   const [selectedProgram, setSelectedProgram] = useState(null);
   const [expandedProgram, setExpandedProgram] = useState(null);
+
+  // Add this state for tracking selected day in Step 4
+const [selectedTrainingDay, setSelectedTrainingDay] = useState(1);
 
   // Program creation state - 6-step wizard
   const [programCreationStep, setProgramCreationStep] = useState(0);
@@ -203,58 +215,357 @@ function WorkoutPrograms() {
     user_id: null,
   });
 
-  // Utility to debounce state updates
-  const debounce = (func, wait) => {
-    let timeout;
-    return (...args) => {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func(...args), wait);
-    };
-  };
+// Reverse - DELETE LATER
+// Add these state variables at the top of your component (with other useState)
+const [localProgramName, setLocalProgramName] = useState(programOverview.Program_Name || '');
+const [localDescription, setLocalDescription] = useState(programOverview.Program_Description || '');
+const [localTimePerWorkout, setLocalTimePerWorkout] = useState(programOverview.Time_Per_Workout || '');
+const [localEquipment, setLocalEquipment] = useState(programOverview.Equipment || '');
+// Add these local state variables for Step 1 inputs
 
-  // Track the currently focused input
-  const [activeInput, setActiveInput] = useState(null);
-  const inputRefs = useRef({});
-  const lastActiveInput = useRef(null);
+const [localInputs, setLocalInputs] = useState({
+  programName: programOverview.Program_Name || '',
+  description: programOverview.Program_Description || '',
+  timePerWorkout: programOverview.Time_Per_Workout || '',
+  equipment: programOverview.Equipment || '',
+});
 
-  // Handle input focus to store the active input field
-  const handleInputFocus = useCallback((field) => {
-    setActiveInput(field);
-    lastActiveInput.current = field;
-    // console.log(`Focused: ${field}`); // Debug: Log focused field
-  }, []);
-
-  // Step 2: Training Structure
-  const [trainingStructure, setTrainingStructure] = useState({
-    type: "",
-    daysPerWeek: 3,
-    sessionsPerDay: 1,
-    customStructure: {},
+// Sync local inputs with main state when programOverview changes
+useEffect(() => {
+  setLocalInputs({
+    programName: programOverview.Program_Name || '',
+    description: programOverview.Program_Description || '',
+    timePerWorkout: programOverview.Time_Per_Workout || '',
+    equipment: programOverview.Equipment || '',
   });
+}, [programOverview.Program_Name, programOverview.Program_Description, programOverview.Time_Per_Workout, programOverview.Equipment]);
 
-  // Memoized setProgramOverview with debounce
-  const setProgramOverviewCallback = useCallback(
-    debounce((newState) => {
-      setProgramOverview((prev) => {
-        // console.log("Updating programOverview:", newState); // Debug: Log state update
-        return { ...prev, ...newState };
+
+// Add this useEffect to sync local state with main state
+useEffect(() => {
+  setLocalProgramName(programOverview.Program_Name || '');
+  setLocalDescription(programOverview.Program_Description || '');
+  setLocalTimePerWorkout(programOverview.Time_Per_Workout || '');
+  setLocalEquipment(programOverview.Equipment || '');
+}, [programOverview.Program_Name, programOverview.Program_Description, programOverview.Time_Per_Workout, programOverview.Equipment]);
+
+// Function to update main state from local inputs
+const updateMainStateFromLocal = (field, value) => {
+  setProgramOverview(prev => ({
+    ...prev,
+    [field]: value,
+  }));
+};
+
+
+// Add this function to update main state on blur
+const updateProgramOverviewOnBlur = (field, value) => {
+  setProgramOverview(prev => ({
+    ...prev,
+    [field]: value
+  }));
+};
+
+
+
+  
+// Utility to debounce state updates
+const debounce = (func, wait) => {
+  let timeout;
+  return (...args) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
+
+// Track the currently focused input
+//const [activeInput, setActiveInput] = useState(null);
+// Simple, explicit focus bookkeeping
+const handleFocus = (key) => () => setActiveInput(key);
+const handleBlur  = () => setActiveInput(null);
+//const inputRefs = useRef({});
+//const lastActiveInput = useRef(null);
+
+// Handle input focus to store the active input field
+/* const handleInputFocus = useCallback((field) => {
+  setActiveInput(field);
+  lastActiveInput.current = field;
+  console.log(`Focused: ${field}`); // Debug: Log focused field
+}, []);
+*/
+
+// Helper function to get training day labels
+const getTrainingDayLabel = (structureType, dayIndex) => {
+  const labels = {
+    push_pull_legs: ['Push', 'Pull', 'Legs', 'Push', 'Pull', 'Legs', 'Rest'],
+    upper_lower: ['Upper', 'Lower', 'Upper', 'Lower', 'Upper', 'Lower', 'Rest'],
+    full_body: ['Full Body', 'Full Body', 'Full Body', 'Full Body', 'Full Body', 'Full Body', 'Rest'],
+    body_part: ['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core', 'Rest'],
+    custom: ['Custom', 'Custom', 'Custom', 'Custom', 'Custom', 'Custom', 'Rest'],
+  };
+  
+  return labels[structureType]?.[dayIndex] || `Day ${dayIndex + 1}`;
+};
+
+
+// Get exercises for a specific day
+const getExercisesForDay = (day) => {
+  return Object.values(weekOneTemplate).filter(exercise => exercise.day === day) || [];
+};
+
+// Add these helper functions for Steps 5 & 6
+const handleGenerateProgram = async () => {
+  try {
+    setLoading(true);
+    
+    // Generate program logic here
+    const generatedWeeks = {};
+    const totalWeeks = programOverview.Program_Length_in_Weeks || 4;
+    
+    for (let week = 1; week <= totalWeeks; week++) {
+      const isDeload = week % (progressionRules.deloadFrequency || 4) === 0;
+      generatedWeeks[week] = {
+        isDeload,
+        exercises: generateWeekExercises(week, isDeload),
+      };
+    }
+    
+    setGeneratedProgram({
+      weeks: generatedWeeks,
+      includeDeloads: true,
+      autoAdjustRPE: true,
+      includeNotes: true,
+    });
+    
+    setSuccessMessage('Program generated successfully!');
+    setTimeout(() => setSuccessMessage(null), 3000);
+  } catch (error) {
+    setError('Failed to generate program: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const generateWeekExercises = (weekNumber, isDeload) => {
+  // Apply progression rules to week 1 template
+  const baseExercises = Object.values(weekOneTemplate);
+  
+  return baseExercises.map(exercise => {
+    const progressionMultiplier = isDeload 
+      ? (progressionRules.deloadPercentage || 80) / 100
+      : weekNumber * (progressionRules.weightProgression || 2.5) / 100 + 1;
+      
+    return {
+      ...exercise,
+      target_weight_kg: exercise.target_weight_kg 
+        ? Math.round(exercise.target_weight_kg * progressionMultiplier * 4) / 4 // Round to nearest 0.25kg
+        : null,
+      week_progression_note: isDeload 
+        ? 'Deload week - reduced intensity'
+        : `Week ${weekNumber} progression applied`,
+    };
+  });
+};
+
+const getTotalSessionsGenerated = () => {
+  const weeks = Object.keys(generatedProgram.weeks || {}).length;
+  return weeks * (trainingStructure.daysPerWeek || 3);
+};
+
+const getTotalExercisesGenerated = () => {
+  const weeks = Object.keys(generatedProgram.weeks || {}).length;
+  const exercisesPerWeek = getTotalExercisesInTemplate();
+  return weeks * exercisesPerWeek;
+};
+
+const getDeloadWeeksCount = () => {
+  return Object.values(generatedProgram.weeks || {}).filter(week => week.isDeload).length;
+};
+
+const isDeloadWeek = (weekNum) => {
+  return generatedProgram.weeks?.[weekNum]?.isDeload || false;
+};
+
+const getExercisesForWeekDay = (week, day) => {
+  return generatedProgram.weeks?.[week]?.exercises?.filter(ex => ex.day === day) || [];
+};
+
+const getModifiedValue = (week, day, exerciseIndex, field) => {
+  return fineTuning.modifiedWeeks?.[week]?.[day]?.[exerciseIndex]?.[field];
+};
+
+const updateWeekModification = (week, day, exerciseIndex, field, value) => {
+  setFineTuning(prev => ({
+    ...prev,
+    modifiedWeeks: {
+      ...prev.modifiedWeeks,
+      [week]: {
+        ...prev.modifiedWeeks?.[week],
+        [day]: {
+          ...prev.modifiedWeeks?.[week]?.[day],
+          [exerciseIndex]: {
+            ...prev.modifiedWeeks?.[week]?.[day]?.[exerciseIndex],
+            [field]: value,
+          },
+        },
+      },
+    },
+  }));
+};
+
+const resetWeekModifications = (week) => {
+  setFineTuning(prev => {
+    const newModifiedWeeks = { ...prev.modifiedWeeks };
+    delete newModifiedWeeks[week];
+    return {
+      ...prev,
+      modifiedWeeks: newModifiedWeeks,
+    };
+  });
+};
+
+const handleSaveProgram = async () => {
+  try {
+    setLoading(true);
+    // Save program logic here - you'll implement this later
+    setSuccessMessage('Program saved successfully!');
+    setTimeout(() => setSuccessMessage(null), 3000);
+  } catch (error) {
+    setError('Failed to save program: ' + error.message);
+  } finally {
+    setLoading(false);
+  }
+};
+
+const handleExportProgram = () => {
+  // Export program logic here - you'll implement this later
+  console.log('Exporting program...');
+  setSuccessMessage('Program export started!');
+  setTimeout(() => setSuccessMessage(null), 3000);
+};
+
+// Add exercise to a specific day
+const addExercise = () => {
+  const newExercise = {
+    exercise: "",
+    target_sets: 3,
+    target_reps: 10,
+    target_weight_kg: null,
+    target_rpe: 7,
+    target_rest: 60,
+    load_prescription_p1RM: null,
+    focus: programOverview.Focus,
+    superset: "",
+    exercise_program_note: "",
+    exerciseDetails: null,
+  };
+  const updatedExercises = [...dayExercises, newExercise];
+  setDayExercises(updatedExercises);
+
+  const updatedWeek = {
+    ...weekData,
+    [selectedDay]: updatedExercises,
+  };
+  onUpdate(updatedWeek);
+};
+
+// Update exercise in a specific day
+const updateExerciseInDay = (day, exerciseIndex, updates) => {
+  const dayExercises = getExercisesForDay(day);
+  if (dayExercises[exerciseIndex]) {
+    const exerciseId = Object.keys(weekOneTemplate).find(key => 
+      weekOneTemplate[key] === dayExercises[exerciseIndex]
+    );
+    
+    if (exerciseId) {
+      setWeekOneTemplate(prev => ({
+        ...prev,
+        [exerciseId]: {
+          ...prev[exerciseId],
+          ...updates,
+        }
+      }));
+    }
+  }
+};
+
+// Remove exercise from a specific day
+const removeExerciseFromDay = (day, exerciseIndex) => {
+  const dayExercises = getExercisesForDay(day);
+  if (dayExercises[exerciseIndex]) {
+    const exerciseId = Object.keys(weekOneTemplate).find(key => 
+      weekOneTemplate[key] === dayExercises[exerciseIndex]
+    );
+    
+    if (exerciseId) {
+      setWeekOneTemplate(prev => {
+        const newTemplate = { ...prev };
+        delete newTemplate[exerciseId];
+        return newTemplate;
       });
-    }, 50),
-    []
-  );
+    }
+  }
+};
 
-  // Memoized setTrainingStructure with debounce
-  const setTrainingStructureCallback = useCallback(
-    debounce((newState) => {
-      setTrainingStructure((prev) => {
-        // console.log("Updating trainingStructure:", newState); // Debug: Log state update
-        return { ...prev, ...newState };
-      });
-    }, 50),
-    []
-  );
+// Get total exercises in template
+const getTotalExercisesInTemplate = () => {
+  return Object.keys(weekOneTemplate).length;
+};
 
-  // Focus restoration for unexpected blur due to re-renders
+// 👆 END OF HELPER FUNCTIONS 👆    
+
+
+// Step 2: Training Structure
+const [trainingStructure, setTrainingStructure] = useState({
+  type: "",
+  daysPerWeek: 3,
+  sessionsPerDay: 1,
+  customStructure: {},
+});
+
+/*  // Memoized setProgramOverview with debounce
+const setProgramOverviewCallback = useCallback(
+  debounce((newState) => {
+    setProgramOverview((prev) => {
+      console.log("Updating programOverview:", newState); // Debug: Log state update
+      return { ...prev, ...newState };
+    });
+  }, 100), // 100ms debounce
+  []
+);
+*/
+
+/*
+// Memoized setTrainingStructure with debounce
+const setTrainingStructureCallback = useCallback(
+  debounce((newState) => {
+    setTrainingStructure((prev) => {
+      console.log("Updating trainingStructure:", newState); // Debug: Log state update
+      return { ...prev, ...newState };
+    });
+  }, 100), // 100ms debounce
+  []
+);
+*/
+
+// Add this stable callback for WeekTemplateEditor
+const handleWeekTemplateUpdate = useCallback((updatedWeek) => {
+  setWeekOneTemplate(updatedWeek);
+}, []);
+
+
+
+
+useEffect(() => {
+  const orig = HTMLInputElement.prototype.focus;
+  HTMLInputElement.prototype.focus = function () {
+    console.trace("➡ forced focus on", this);   // <= only change
+    return orig.apply(this, arguments);
+  };
+}, []);
+
+
+  /*// Focus restoration for unexpected blur due to re-renders
   useEffect(() => {
     if (activeInput && inputRefs.current[activeInput]) {
       const currentInput = inputRefs.current[activeInput];
@@ -271,6 +582,28 @@ function WorkoutPrograms() {
       }
     }
   }, [activeInput, programOverview, trainingStructure]);
+  
+
+ // Clear focus after NumberInput state updates
+useEffect(() => {
+  const timer = setTimeout(() => {
+    if (
+      document.activeElement.tagName === "INPUT" &&
+      document.activeElement.type === "number"
+    ) {
+      document.activeElement.blur();
+      console.log("Cleared focus from NumberInput"); // Debug
+    }
+  }, 150); // 150ms to allow state update
+
+  return () => clearTimeout(timer);
+}, [programOverview, trainingStructure]);
+
+*/
+
+// State for step navigation
+const [currentStep, setCurrentStep] = useState(1);
+
   // delete? necessary?
 
   // Step 3: Progression Rules
@@ -288,6 +621,40 @@ function WorkoutPrograms() {
 
   // Step 4: Week 1 Template
   const [weekOneTemplate, setWeekOneTemplate] = useState({});
+  // Add this state for Step 4
+const [localExerciseData, setLocalExerciseData] = useState({});
+
+// Add this function to handle local exercise updates
+const updateLocalExerciseData = (dayIndex, exerciseIndex, field, value) => {
+  const key = `day${dayIndex}_ex${exerciseIndex}_${field}`;
+  setLocalExerciseData(prev => ({
+    ...prev,
+    [key]: value
+  }));
+};
+
+// Add this function to get local exercise value
+const getLocalExerciseValue = (dayIndex, exerciseIndex, field, defaultValue) => {
+  const key = `day${dayIndex}_ex${exerciseIndex}_${field}`;
+  return localExerciseData[key] !== undefined ? localExerciseData[key] : defaultValue;
+};
+
+// Add this function to commit local changes to main state
+const commitExerciseChanges = (dayIndex, exerciseIndex) => {
+  const updates = {};
+  Object.keys(localExerciseData).forEach(key => {
+    if (key.startsWith(`day${dayIndex}_ex${exerciseIndex}_`)) {
+      const field = key.split('_')[2];
+      updates[field] = localExerciseData[key];
+    }
+  });
+  
+  if (Object.keys(updates).length > 0) {
+    updateExerciseInDay(dayIndex, exerciseIndex, updates);
+  }
+};
+
+
 
   // Step 5: Generated Program
   const [generatedProgram, setGeneratedProgram] = useState({});
@@ -952,13 +1319,13 @@ function WorkoutPrograms() {
       onSelectExercise(exercise);
     };
 
-    const handleInputFocus = () => {
+    /*const handleInputFocus = () => {
       setShowResults(true);
       if (searchTerm.trim() && localFilteredExercises.length === 0) {
         performLocalSearch(searchTerm);
       }
     };
-
+*/
     const handleInputBlur = () => {
       if (!isMouseOverResults) {
         setTimeout(() => {
@@ -985,7 +1352,7 @@ function WorkoutPrograms() {
         <Input
           value={searchTerm}
           onChange={handleInputChange}
-          onFocus={handleInputFocus}
+          // onFocus={handleInputFocus}
           onBlur={handleInputBlur}
           onKeyDown={handleKeyDown}
           placeholder="Search exercises (e.g., 'goblet squat', 'chest press')..."
@@ -1424,7 +1791,12 @@ function WorkoutPrograms() {
     );
   }
   // Step 1: Program Goals & Overview Component
-  const renderStep1Goals = () => (
+  // Step 1: Program Goals & Overview Component - Memoized to prevent re-renders
+// Step 1: Program Goals & Overview Component - Simple version without useCallback
+const renderStep1Goals = () => {
+  console.log('renderStep1Goals called', Date.now());
+
+  return (
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="md" mb={4} color="teal.600">
@@ -1440,15 +1812,14 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Program Name</FormLabel>
           <Input
-            ref={(el) => (inputRefs.current["Program_Name"] = el)} // Add this
-            value={programOverview.Program_Name}
-            onChange={(e) =>
-              setProgramOverview((prev) => ({
+            key="program-name-stable"
+            defaultValue={programOverview.Program_Name || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
                 ...prev,
                 Program_Name: e.target.value,
-              }))
-            }
-            onFocus={() => handleInputFocus("Program_Name")} // Add focus handler
+              }));
+            }}
             placeholder="e.g., Strength Building Phase 1"
           />
         </FormControl>
@@ -1456,7 +1827,6 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Training Level</FormLabel>
           <Select
-            ref={(el) => (inputRefs.current["Level"] = el)} // Add this
             value={programOverview.Level}
             onChange={(e) =>
               setProgramOverview((prev) => ({
@@ -1464,7 +1834,6 @@ function WorkoutPrograms() {
                 Level: e.target.value,
               }))
             }
-            onFocus={() => handleInputFocus("Level")} // Add focus handler
             placeholder="Select training level"
           >
             <option value="Beginner">Beginner (0-1 years)</option>
@@ -1477,7 +1846,6 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Primary Focus</FormLabel>
           <Select
-            ref={(el) => (inputRefs.current["Focus"] = el)} // Add this
             value={programOverview.Focus}
             onChange={(e) =>
               setProgramOverview((prev) => ({
@@ -1485,7 +1853,6 @@ function WorkoutPrograms() {
                 Focus: e.target.value,
               }))
             }
-            onFocus={() => handleInputFocus("Focus")} // Add focus handler
             placeholder="Select primary focus"
           >
             {WORKOUT_FOCUS_OPTIONS.map((option) => (
@@ -1499,122 +1866,174 @@ function WorkoutPrograms() {
         <FormControl isRequired>
           <FormLabel>Program Duration (Weeks)</FormLabel>
           <NumberInput
-            value={programOverview.Program_Length_in_Weeks || ""}
-            onChange={(value) =>
-              setProgramOverviewCallback({
-                Program_Length_in_Weeks: parseInt(value) || null,
-              })
-            }
+            defaultValue={programOverview.Program_Length_in_Weeks ?? ""}
             min={1}
             max={52}
           >
-            <NumberInputField
-              ref={(el) => (inputRefs.current["Program_Length_in_Weeks"] = el)}
+            <NumberInputField 
               placeholder="Enter weeks"
-              onFocus={() => handleInputFocus("Program_Length_in_Weeks")}
+              onBlur={(e) =>
+                setProgramOverview(prev => ({
+                  ...prev,
+                  Program_Length_in_Weeks: Number.isNaN(parseInt(e.target.value)) ? null : parseInt(e.target.value),
+                }))
+              }
             />
-            <NumberInputStepper
-              data-testid="number-input-stepper" // Added for click detection
-              onClick={() => handleInputFocus("Program_Length_in_Weeks")} // Simplified to update activeInput only
-            >
+            <NumberInputStepper>
               <NumberIncrementStepper />
               <NumberDecrementStepper />
             </NumberInputStepper>
           </NumberInput>
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Key Training Focus</FormLabel>
+          <Input
+            key="key-training-focus-stable"
+            defaultValue={programOverview.Key_Training_Focus || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
+                Key_Training_Focus: e.target.value,
+              }));
+            }}
+            placeholder="e.g., Compound movements, Progressive overload"
+          />
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Training Mix & Frequency</FormLabel>
+          <Input
+            key="training-mix-frequency-stable"
+            defaultValue={programOverview.Training_Mix_Frequency || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
+                Training_Mix_Frequency: e.target.value,
+              }));
+            }}
+            placeholder="e.g., 3x/week full body, 4x/week upper/lower"
+          />
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Program Macro Cycle</FormLabel>
+          <Input
+            key="program-macro-cycle-stable"
+            defaultValue={programOverview.Program_Macro_Cycle || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
+                Program_Macro_Cycle: e.target.value,
+              }));
+            }}
+            placeholder="e.g., Accumulation, Intensification, Realization"
+          />
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Weeks</FormLabel>
+          <NumberInput
+            defaultValue={programOverview.Weeks ?? ""}
+            min={1}
+            max={52}
+          >
+            <NumberInputField 
+              placeholder="Enter weeks"
+              onBlur={(e) =>
+                setProgramOverview(prev => ({
+                  ...prev,
+                  Weeks: Number.isNaN(parseInt(e.target.value)) ? null : parseInt(e.target.value),
+                }))
+              }
+            />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
+            </NumberInputStepper>
+          </NumberInput>
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Preferred Season</FormLabel>
+          <Select
+            value={programOverview.Prefered_Season || ''}
+            onChange={(e) =>
+              setProgramOverview((prev) => ({
+                ...prev,
+                Prefered_Season: e.target.value,
+              }))
+            }
+            placeholder="Select preferred season"
+          >
+            <option value="Spring">Spring</option>
+            <option value="Summer">Summer</option>
+            <option value="Fall">Fall</option>
+            <option value="Winter">Winter</option>
+            <option value="Any">Any Season</option>
+          </Select>
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Time Per Workout</FormLabel>
+          <Input
+            key="time-stable"
+            defaultValue={programOverview.Time_Per_Workout || ''}
+            onBlur={(e) =>  
+              setProgramOverview(prev => ({
+                ...prev,
+                Time_Per_Workout: e.target.value,
+              }))
+            }
+            placeholder="e.g., 60-90 minutes"
+          />
+        </FormControl>
+
+        <FormControl>
+          <FormLabel>Equipment</FormLabel>
+          <Input
+            key="equipment-stable"
+            defaultValue={programOverview.Equipment || ''}
+            onBlur={(e) =>  
+              setProgramOverview(prev => ({
+                ...prev,
+                Equipment: e.target.value,
+              }))
+            }
+            placeholder="e.g., Full gym, Home gym, Bodyweight"
+          />
         </FormControl>
       </SimpleGrid>
 
       <FormControl>
         <FormLabel>Program Description</FormLabel>
         <Textarea
-          ref={(el) => (inputRefs.current["Program_Description"] = el)}
-          value={programOverview.Program_Description}
-          onChange={(e) =>
-            setProgramOverview((prev) => ({
+          key="description-stable"
+          defaultValue={programOverview.Program_Description || ''}
+          onBlur={(e) =>  
+            setProgramOverview(prev => ({
               ...prev,
               Program_Description: e.target.value,
             }))
           }
-          onFocus={() => handleInputFocus("Program_Description")}
           placeholder="Describe the program's objectives, methodology, and target outcomes..."
           rows={4}
         />
       </FormControl>
 
-      <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
         <FormControl>
-          <FormLabel>Days Per Week</FormLabel>
-          <NumberInput
-            value={programOverview.Days_Per_Week || ""}
-            onChange={(value) =>
-              setProgramOverviewCallback({
-                Days_Per_Week: parseInt(value) || null,
-              })
-            }
-            min={1}
-            max={7}
-          >
-            <NumberInputField
-              ref={(el) => (inputRefs.current["Days_Per_Week"] = el)}
-              placeholder="Enter days"
-              onFocus={() => handleInputFocus("Days_Per_Week")}
-            />
-            <NumberInputStepper
-              data-testid="number-input-stepper" // Added for click detection
-              onClick={() => handleInputFocus("Days_Per_Week")} // Simplified to update activeInput only
-            >
-              <NumberIncrementStepper />
-              <NumberDecrementStepper />
-            </NumberInputStepper>
-          </NumberInput>
-        </FormControl>
-
-        <FormControl>
-          <FormLabel>Time Per Workout</FormLabel>
-          <Input
-            ref={(el) => (inputRefs.current["Time_Per_Workout"] = el)}
-            value={programOverview.Time_Per_Workout}
-            onChange={(e) =>
-              setProgramOverview((prev) => ({
-                ...prev,
-                Time_Per_Workout: e.target.value,
-              }))
-            }
-            onFocus={() => handleInputFocus("Time_Per_Workout")}
-            placeholder="e.g., 60-90 minutes"
-          />
-        </FormControl>
-
-        <FormControl>
-          <FormLabel>Equipment Needed</FormLabel>
-          <Input
-            ref={(el) => (inputRefs.current["Equipment"] = el)}
-            value={programOverview.Equipment}
-            onChange={(e) =>
-              setProgramOverview((prev) => ({
-                ...prev,
-                Equipment: e.target.value,
-              }))
-            }
-            onFocus={() => handleInputFocus("Equipment")}
-            placeholder="e.g., Barbell, Dumbbells, Gym"
-          />
-        </FormControl>
-      </SimpleGrid>
-
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-        <FormControl>
-          <FormLabel>Key Training Focus</FormLabel>
+          <FormLabel>Nutrition & Recovery</FormLabel>
           <Textarea
-            ref={(el) => (inputRefs.current["Key_Training_Focus"] = el)}
-            value={programOverview.Key_Training_Focus}
-            onChange={(e) =>
-              setProgramOverviewCallback({
-                Key_Training_Focus: e.target.value,
-              })
-            }
-            onFocus={() => handleInputFocus("Key_Training_Focus")}
-            placeholder="Specific training emphases..."
+            key="nutrition-recovery-stable"
+            defaultValue={programOverview.Nutrition_Recovery || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
+                Nutrition_Recovery: e.target.value,
+              }));
+            }}
+            placeholder="Guidelines for nutrition, sleep, and recovery protocols..."
             rows={3}
           />
         </FormControl>
@@ -1622,178 +2041,112 @@ function WorkoutPrograms() {
         <FormControl>
           <FormLabel>Key Adaptations</FormLabel>
           <Textarea
-            ref={(el) => (inputRefs.current["Key_Adaptations"] = el)}
-            value={programOverview.Key_Adaptations}
-            onChange={(e) =>
-              setProgramOverviewCallback({
+            key="key-adaptations-stable"
+            defaultValue={programOverview.Key_Adaptations || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
                 Key_Adaptations: e.target.value,
-              })
-            }
-            onFocus={() => handleInputFocus("Key_Adaptations")}
-            placeholder="Expected physiological adaptations..."
+              }));
+            }}
+            placeholder="Expected physiological and performance adaptations..."
             rows={3}
           />
         </FormControl>
 
         <FormControl>
-          <FormLabel>Muscle Engagement</FormLabel>
-          <Input
-            ref={(el) => (inputRefs.current["MUSCLE_ENGAGEMENT"] = el)}
-            value={programOverview.MUSCLE_ENGAGEMENT}
-            onChange={(e) =>
-              setProgramOverviewCallback({
-                MUSCLE_ENGAGEMENT: e.target.value,
-              })
-            }
-            onFocus={() => handleInputFocus("MUSCLE_ENGAGEMENT")}
-            placeholder="Primary muscle groups targeted"
+          <FormLabel>Key Assessments</FormLabel>
+          <Textarea
+            key="key-assessments-stable"
+            defaultValue={programOverview.Key_Assessments || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
+                Key_Assessments: e.target.value,
+              }));
+            }}
+            placeholder="Tests and measurements to track progress..."
+            rows={3}
           />
         </FormControl>
 
         <FormControl>
-          <FormLabel>Preferred Season</FormLabel>
-          <Select
-            ref={(el) => (inputRefs.current["Prefered_Season"] = el)}
-            value={programOverview.Prefered_Season}
-            onChange={(e) =>
-              setProgramOverviewCallback({
-                Prefered_Season: e.target.value,
-              })
-            }
-            onFocus={() => handleInputFocus("Prefered_Season")}
-            placeholder="Select season"
-          >
-            <option value="Spring">Spring</option>
-            <option value="Summer">Summer</option>
-            <option value="Fall">Fall</option>
-            <option value="Winter">Winter</option>
-            <option value="Year-round">Year-round</option>
-          </Select>
+          <FormLabel>Key Assessment Goals</FormLabel>
+          <Textarea
+            key="key-assessment-goals-stable"
+            defaultValue={programOverview.Key_Assessment_Goals || ''}
+            onBlur={(e) => {
+              setProgramOverview(prev => ({
+                ...prev,
+                Key_Assessment_Goals: e.target.value,
+              }));
+            }}
+            placeholder="Target outcomes and benchmarks for assessments..."
+            rows={3}
+          />
         </FormControl>
       </SimpleGrid>
     </VStack>
   );
+};
+// Step 2: Training Structure Component - Fixed with stable keys and onBlur
+const renderStep2Structure = () => {
+  console.log('renderStep2Structure called', Date.now());
 
-  // Step 2: Training Structure Component
-  const renderStep2Structure = () => (
+  return (
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="md" mb={4} color="teal.600">
-          Set Up Training Structure
+          Training Structure Setup
         </Heading>
         <Text color="gray.600" mb={6}>
-          Choose how you want to organize your training sessions throughout the
-          week.
+          Define how your training will be structured throughout the week and across different sessions.
         </Text>
       </Box>
 
-      <FormControl isRequired>
-        <FormLabel>Training Structure Type</FormLabel>
-        <RadioGroup
-          value={trainingStructure.type}
-          onChange={(value) => setTrainingStructureCallback({ type: value })}
-        >
-          <VStack align="start" spacing={3}>
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+        <FormControl isRequired>
+          <FormLabel>Training Structure Type</FormLabel>
+          <Select
+            value={trainingStructure.type}
+            onChange={(e) =>
+              setTrainingStructure((prev) => ({
+                ...prev,
+                type: e.target.value,
+              }))
+            }
+            placeholder="Select training structure"
+          >
             {TRAINING_STRUCTURES.map((structure) => (
-              <Box
-                key={structure.value}
-                p={4}
-                border="1px solid"
-                borderColor="gray.200"
-                borderRadius="md"
-                width="100%"
-              >
-                <Radio
-                  ref={(el) =>
-                    (inputRefs.current[
-                      `Training_Structure_Type_${structure.value}`
-                    ] = el)
-                  }
-                  value={structure.value}
-                  mb={2}
-                  onFocus={() =>
-                    handleInputFocus(
-                      `Training_Structure_Type_${structure.value}`
-                    )
-                  }
-                  onBlur={() => {
-                    setActiveInput(null);
-                    console.log(
-                      `Blurred: Training_Structure_Type_${structure.value}`
-                    ); // Debug
-                  }}
-                >
-                  <Text fontWeight="semibold">{structure.label}</Text>
-                </Radio>
-                <Text fontSize="sm" color="gray.600" ml={6}>
-                  {structure.description}
-                </Text>
-              </Box>
+              <option key={structure.value} value={structure.value}>
+                {structure.label}
+              </option>
             ))}
-          </VStack>
-        </RadioGroup>
-      </FormControl>
-
-      {trainingStructure.type && (
-        <Box p={4} bg="blue.50" borderRadius="md">
-          <Text fontWeight="semibold" mb={2}>
-            Structure Preview:
-          </Text>
-          {trainingStructure.type === "push_pull_legs" && (
-            <VStack align="start" spacing={1}>
-              <Text fontSize="sm">
-                • Day 1: Push (Chest, Shoulders, Triceps)
-              </Text>
-              <Text fontSize="sm">• Day 2: Pull (Back, Biceps)</Text>
-              <Text fontSize="sm">
-                • Day 3: Legs (Quads, Hamstrings, Glutes, Calves)
-              </Text>
-            </VStack>
-          )}
-          {trainingStructure.type === "upper_lower" && (
-            <VStack align="start" spacing={1}>
-              <Text fontSize="sm">
-                • Day 1: Upper Body (Chest, Back, Shoulders, Arms)
-              </Text>
-              <Text fontSize="sm">• Day 2: Lower Body (Legs, Glutes)</Text>
-            </VStack>
-          )}
-          {trainingStructure.type === "full_body" && (
-            <Text fontSize="sm">
-              Each session targets all major muscle groups
+          </Select>
+          {trainingStructure.type && (
+            <Text fontSize="sm" color="gray.600" mt={2}>
+              {TRAINING_STRUCTURES.find(s => s.value === trainingStructure.type)?.description}
             </Text>
           )}
-        </Box>
-      )}
+        </FormControl>
 
-      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-        <FormControl>
-          <FormLabel>Training Days Per Week</FormLabel>
+        <FormControl isRequired>
+          <FormLabel>Days Per Week</FormLabel>
           <NumberInput
-            value={trainingStructure.daysPerWeek}
-            onChange={(value) =>
-              setTrainingStructureCallback({
-                daysPerWeek: parseInt(value) || 3,
-              })
+            value={trainingStructure.daysPerWeek || ""}
+            onChange={(valueString, valueNumber) =>
+              setTrainingStructure(prev => ({
+                ...prev,
+                daysPerWeek: Number.isNaN(valueNumber) ? 3 : valueNumber,
+              }))
             }
             min={1}
             max={7}
           >
-            <NumberInputField
-              ref={(el) => (inputRefs.current["Training_Days_Per_Week"] = el)}
-              placeholder="Enter days"
-              onFocus={() => handleInputFocus("Training_Days_Per_Week")}
-              onBlur={() => {
-                setActiveInput(null);
-                console.log("Blurred: Training_Days_Per_Week"); // Debug
-              }}
-            />
-            <NumberInputStepper
-              data-testid="number-input-stepper"
-              onClick={() => handleInputFocus("Training_Days_Per_Week")}
-            >
-              <NumberIncrementStepper data-testid="number-increment-stepper" />
-              <NumberDecrementStepper data-testid="number-decrement-stepper" />
+            <NumberInputField placeholder="Enter days per week" />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
             </NumberInputStepper>
           </NumberInput>
         </FormControl>
@@ -1801,317 +2154,527 @@ function WorkoutPrograms() {
         <FormControl>
           <FormLabel>Sessions Per Day</FormLabel>
           <NumberInput
-            value={trainingStructure.sessionsPerDay}
-            onChange={(value) =>
-              setTrainingStructureCallback({
-                sessionsPerDay: parseInt(value) || 1,
-              })
+            value={trainingStructure.sessionsPerDay || ""}
+            onChange={(valueString, valueNumber) =>
+              setTrainingStructure(prev => ({
+                ...prev,
+                sessionsPerDay: Number.isNaN(valueNumber) ? 1 : valueNumber,
+              }))
             }
             min={1}
             max={3}
           >
-            <NumberInputField
-              ref={(el) => (inputRefs.current["Sessions_Per_Day"] = el)}
-              placeholder="Enter sessions"
-              onFocus={() => handleInputFocus("Sessions_Per_Day")}
-              onBlur={() => {
-                setActiveInput(null);
-                console.log("Blurred: Sessions_Per_Day"); // Debug
-              }}
-            />
-            <NumberInputStepper
-              data-testid="number-input-stepper"
-              onClick={() => handleInputFocus("Sessions_Per_Day")}
-            >
-              <NumberIncrementStepper data-testid="number-increment-stepper" />
-              <NumberDecrementStepper data-testid="number-decrement-stepper" />
+            <NumberInputField placeholder="Sessions per day" />
+            <NumberInputStepper>
+              <NumberIncrementStepper />
+              <NumberDecrementStepper />
             </NumberInputStepper>
           </NumberInput>
+          <Text fontSize="sm" color="gray.500" mt={1}>
+            Most programs use 1 session per day
+          </Text>
         </FormControl>
       </SimpleGrid>
+
+      {/* Custom Structure Configuration */}
+      {trainingStructure.type === 'custom' && (
+        <Box>
+          <Heading size="sm" mb={4} color="teal.500">
+            Custom Structure Configuration
+          </Heading>
+          <Alert status="info" mb={4}>
+            <AlertIcon />
+            <Text fontSize="sm">
+              Define your custom training structure by specifying what muscle groups or movement patterns  
+              you'll train on each day of the week.
+            </Text>
+          </Alert>
+
+          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+            {Array.from({ length: trainingStructure.daysPerWeek || 3 }, (_, index) => (
+              <FormControl key={index}>
+                <FormLabel>Day {index + 1} Focus</FormLabel>
+                <Input
+                  key={`custom-day-${index + 1}-stable`}
+                  defaultValue={trainingStructure.customStructure?.[`day${index + 1}`] || ""}
+                  onBlur={(e) =>
+                    setTrainingStructure(prev => ({
+                      ...prev,
+                      customStructure: {
+                        ...prev.customStructure,
+                        [`day${index + 1}`]: e.target.value,
+                      }
+                    }))
+                  }
+                  placeholder="e.g., Upper Body, Legs, Push, Pull, etc."
+                />
+              </FormControl>
+            ))}
+          </SimpleGrid>
+        </Box>
+      )}
+
+      {/* Structure Preview */}
+      {trainingStructure.type && trainingStructure.type !== 'custom' && (
+        <Box>
+          <Heading size="sm" mb={3} color="teal.500">
+            Structure Preview
+          </Heading>
+          <Card>
+            <CardBody>
+              {trainingStructure.type === 'push_pull_legs' && (
+                <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                  <Box textAlign="center" p={3} bg="red.50" borderRadius="md">
+                    <Text fontWeight="bold" color="red.600">Push Day</Text>
+                    <Text fontSize="sm" color="gray.600" mt={1}>
+                      Chest, Shoulders, Triceps
+                    </Text>
+                  </Box>
+                  <Box textAlign="center" p={3} bg="blue.50" borderRadius="md">
+                    <Text fontWeight="bold" color="blue.600">Pull Day</Text>
+                    <Text fontSize="sm" color="gray.600" mt={1}>
+                      Back, Biceps, Rear Delts
+                    </Text>
+                  </Box>
+                  <Box textAlign="center" p={3} bg="green.50" borderRadius="md">
+                    <Text fontWeight="bold" color="green.600">Legs Day</Text>
+                    <Text fontSize="sm" color="gray.600" mt={1}>
+                      Quads, Hamstrings, Glutes, Calves
+                    </Text>
+                  </Box>
+                </SimpleGrid>
+              )}
+
+              {trainingStructure.type === 'upper_lower' && (
+                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                  <Box textAlign="center" p={3} bg="purple.50" borderRadius="md">
+                    <Text fontWeight="bold" color="purple.600">Upper Body</Text>
+                    <Text fontSize="sm" color="gray.600" mt={1}>
+                      Chest, Back, Shoulders, Arms
+                    </Text>
+                  </Box>
+                  <Box textAlign="center" p={3} bg="orange.50" borderRadius="md">
+                    <Text fontWeight="bold" color="orange.600">Lower Body</Text>
+                    <Text fontSize="sm" color="gray.600" mt={1}>
+                      Quads, Hamstrings, Glutes, Calves
+                    </Text>
+                  </Box>
+                </SimpleGrid>
+              )}
+
+              {trainingStructure.type === 'full_body' && (
+                <Box textAlign="center" p={3} bg="teal.50" borderRadius="md">
+                  <Text fontWeight="bold" color="teal.600">Full Body</Text>
+                  <Text fontSize="sm" color="gray.600" mt={1}>
+                    All major muscle groups each session
+                  </Text>
+                </Box>
+              )}
+
+              {trainingStructure.type === 'body_part' && (
+                <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={3}>
+                  {['Chest', 'Back', 'Shoulders', 'Arms', 'Legs', 'Core'].map((bodyPart) => (
+                    <Box key={bodyPart} textAlign="center" p={2} bg="gray.50" borderRadius="md">
+                      <Text fontWeight="medium" fontSize="sm">{bodyPart}</Text>
+                    </Box>
+                  ))}
+                </SimpleGrid>
+              )}
+            </CardBody>
+          </Card>
+        </Box>
+      )}
+
+      {/* Weekly Schedule Preview */}
+      {trainingStructure.daysPerWeek && (
+        <Box>
+          <Heading size="sm" mb={3} color="teal.500">
+            Weekly Schedule
+          </Heading>
+          <HStack spacing={2} flexWrap="wrap">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => (
+              <Badge
+                key={day}
+                colorScheme={index < trainingStructure.daysPerWeek ? "teal" : "gray"}
+                variant={index < trainingStructure.daysPerWeek ? "solid" : "outline"}
+                p={2}
+              >
+                {day}
+              </Badge>
+            ))}
+          </HStack>
+          <Text fontSize="sm" color="gray.600" mt={2}>
+            Training on {trainingStructure.daysPerWeek} days per week
+          </Text>
+        </Box>
+      )}
     </VStack>
   );
+};
   // Step 3: Progression Rules Component
   const renderStep3Progression = () => (
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="md" mb={4} color="teal.600">
-          Define Progression Rules
+          Progression Rules & Strategy
         </Heading>
         <Text color="gray.600" mb={6}>
-          Set how your program will progress over time to ensure continuous
-          adaptation.
+          Define how your program will progress over time to ensure continuous adaptation and improvement.
         </Text>
       </Box>
-
-      <FormControl isRequired>
-        <FormLabel>Progression Type</FormLabel>
-        <RadioGroup
-          value={progressionRules.type}
-          onChange={(value) =>
-            setProgressionRules((prev) => ({ ...prev, type: value }))
-          }
-        >
-          <VStack align="start" spacing={3}>
+  
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={6}>
+        <FormControl isRequired>
+          <FormLabel>Progression Type</FormLabel>
+          <Select
+            value={progressionRules.type}
+            onChange={(e) =>
+              setProgressionRules((prev) => ({
+                ...prev,
+                type: e.target.value,
+              }))
+            }
+            placeholder="Select progression method"
+          >
             {PROGRESSION_TYPES.map((progression) => (
-              <Box
-                key={progression.value}
-                p={4}
-                border="1px solid"
-                borderColor="gray.200"
-                borderRadius="md"
-                width="100%"
-              >
-                <Radio value={progression.value} mb={2}>
-                  <Text fontWeight="semibold">{progression.label}</Text>
-                </Radio>
-                <Text fontSize="sm" color="gray.600" ml={6}>
-                  {progression.description}
-                </Text>
-              </Box>
+              <option key={progression.value} value={progression.value}>
+                {progression.label}
+              </option>
             ))}
-          </VStack>
-        </RadioGroup>
-      </FormControl>
-
-      {progressionRules.type && (
-        <Box p={4} bg="green.50" borderRadius="md">
-          <Text fontWeight="semibold" mb={4}>
-            Progression Settings
+          </Select>
+          {progressionRules.type && (
+            <Text fontSize="sm" color="gray.600" mt={2}>
+              {PROGRESSION_TYPES.find(p => p.value === progressionRules.type)?.description}
+            </Text>
+          )}
+        </FormControl>
+  
+        <FormControl>
+          <FormLabel>Auto-Generate Progression</FormLabel>
+          <Switch
+            isChecked={progressionRules.autoGenerate}
+            onChange={(e) =>
+              setProgressionRules((prev) => ({
+                ...prev,
+                autoGenerate: e.target.checked,
+              }))
+            }
+            colorScheme="teal"
+          />
+          <Text fontSize="sm" color="gray.500" mt={1}>
+            Automatically calculate progression based on your rules
           </Text>
-
-          {progressionRules.type === "linear" && (
+        </FormControl>
+      </SimpleGrid>
+  
+      {/* Linear Progression Settings */}
+      {progressionRules.type === 'linear' && (
+        <Card>
+          <CardHeader>
+            <Heading size="sm" color="teal.500">Linear Progression Settings</Heading>
+          </CardHeader>
+          <CardBody>
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
               <FormControl>
-                <FormLabel>Weight Increase Per Week (kg)</FormLabel>
+                <FormLabel>Weight Progression (kg per week)</FormLabel>
                 <NumberInput
-                  value={progressionRules.weightProgression}
-                  onChange={(value) =>
-                    setProgressionRules((prev) => ({
+                  value={progressionRules.weightProgression || ""}
+                  onChange={(valueString, valueNumber) =>
+                    setProgressionRules(prev => ({
                       ...prev,
-                      weightProgression: parseFloat(value) || 2.5,
+                      weightProgression: Number.isNaN(valueNumber) ? 2.5 : valueNumber,
                     }))
                   }
-                  step={0.5}
                   min={0.5}
                   max={10}
-                  precision={1}
+                  step={0.5}
                 >
-                  <NumberInputField />
+                  <NumberInputField placeholder="2.5" />
                   <NumberInputStepper>
                     <NumberIncrementStepper />
                     <NumberDecrementStepper />
                   </NumberInputStepper>
                 </NumberInput>
+                <Text fontSize="sm" color="gray.500" mt={1}>
+                  Typical range: 1.25-5kg per week
+                </Text>
               </FormControl>
             </SimpleGrid>
-          )}
-
-          {progressionRules.type === "double" && (
+          </CardBody>
+        </Card>
+      )}
+  
+      {/* Double Progression Settings */}
+      {progressionRules.type === 'double' && (
+        <Card>
+          <CardHeader>
+            <Heading size="sm" color="teal.500">Double Progression Settings</Heading>
+          </CardHeader>
+          <CardBody>
             <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
               <FormControl>
-                <FormLabel>Rep Increase Per Week</FormLabel>
+                <FormLabel>Rep Progression (per week)</FormLabel>
                 <NumberInput
-                  value={progressionRules.repProgression}
-                  onChange={(value) =>
-                    setProgressionRules((prev) => ({
+                  value={progressionRules.repProgression || ""}
+                  onChange={(valueString, valueNumber) =>
+                    setProgressionRules(prev => ({
                       ...prev,
-                      repProgression: parseInt(value) || 1,
+                      repProgression: Number.isNaN(valueNumber) ? 1 : valueNumber,
                     }))
                   }
                   min={1}
                   max={5}
                 >
-                  <NumberInputField />
+                  <NumberInputField placeholder="1" />
                   <NumberInputStepper>
                     <NumberIncrementStepper />
                     <NumberDecrementStepper />
                   </NumberInputStepper>
                 </NumberInput>
               </FormControl>
+  
               <FormControl>
-                <FormLabel>Weight Increase When Rep Target Hit (kg)</FormLabel>
+                <FormLabel>Weight Increase (kg)</FormLabel>
                 <NumberInput
-                  value={progressionRules.weightProgression}
-                  onChange={(value) =>
-                    setProgressionRules((prev) => ({
+                  value={progressionRules.weightProgression || ""}
+                  onChange={(valueString, valueNumber) =>
+                    setProgressionRules(prev => ({
                       ...prev,
-                      weightProgression: parseFloat(value) || 2.5,
+                      weightProgression: Number.isNaN(valueNumber) ? 2.5 : valueNumber,
                     }))
                   }
-                  step={0.5}
                   min={0.5}
                   max={10}
-                  precision={1}
-                >
-                  <NumberInputField />
-                  <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                  </NumberInputStepper>
-                </NumberInput>
-              </FormControl>
-            </SimpleGrid>
-          )}
-
-          {progressionRules.type === "percentage" && (
-            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-              <FormControl>
-                <FormLabel>Percentage Increase Per Week (%)</FormLabel>
-                <NumberInput
-                  value={progressionRules.percentageIncrease}
-                  onChange={(value) =>
-                    setProgressionRules((prev) => ({
-                      ...prev,
-                      percentageIncrease: parseFloat(value) || 2.5,
-                    }))
-                  }
                   step={0.5}
-                  min={0.5}
-                  max={10}
-                  precision={1}
                 >
-                  <NumberInputField />
+                  <NumberInputField placeholder="2.5" />
                   <NumberInputStepper>
                     <NumberIncrementStepper />
                     <NumberDecrementStepper />
                   </NumberInputStepper>
                 </NumberInput>
+                <Text fontSize="sm" color="gray.500" mt={1}>
+                  Weight added when rep target is reached
+                </Text>
               </FormControl>
             </SimpleGrid>
-          )}
-
-          {progressionRules.type === "block" && (
-            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-              <FormControl>
-                <FormLabel>Block Length (Weeks)</FormLabel>
-                <NumberInput
-                  value={progressionRules.blockLength}
-                  onChange={(value) =>
-                    setProgressionRules((prev) => ({
-                      ...prev,
-                      blockLength: parseInt(value) || 4,
-                    }))
-                  }
-                  min={2}
-                  max={8}
-                >
-                  <NumberInputField />
-                  <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                  </NumberInputStepper>
-                </NumberInput>
-              </FormControl>
-            </SimpleGrid>
-          )}
-
-          {progressionRules.type === "wave" && (
+          </CardBody>
+        </Card>
+      )}
+  
+      {/* Percentage-based Settings */}
+      {progressionRules.type === 'percentage' && (
+        <Card>
+          <CardHeader>
+            <Heading size="sm" color="teal.500">Percentage-based Progression</Heading>
+          </CardHeader>
+          <CardBody>
             <FormControl>
-              <FormLabel>Wave Pattern (% 1RM)</FormLabel>
-              <HStack>
+              <FormLabel>Weekly Percentage Increase (%)</FormLabel>
+              <NumberInput
+                value={progressionRules.percentageIncrease || ""}
+                onChange={(valueString, valueNumber) =>
+                  setProgressionRules(prev => ({
+                    ...prev,
+                    percentageIncrease: Number.isNaN(valueNumber) ? 2.5 : valueNumber,
+                  }))
+                }
+                min={1}
+                max={10}
+                step={0.5}
+              >
+                <NumberInputField placeholder="2.5" />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+              <Text fontSize="sm" color="gray.500" mt={1}>
+                Percentage increase in training load per week
+              </Text>
+            </FormControl>
+          </CardBody>
+        </Card>
+      )}
+  
+      {/* Block Periodization Settings */}
+      {progressionRules.type === 'block' && (
+        <Card>
+          <CardHeader>
+            <Heading size="sm" color="teal.500">Block Periodization Settings</Heading>
+          </CardHeader>
+          <CardBody>
+            <FormControl>
+              <FormLabel>Block Length (weeks)</FormLabel>
+              <NumberInput
+                value={progressionRules.blockLength || ""}
+                onChange={(valueString, valueNumber) =>
+                  setProgressionRules(prev => ({
+                    ...prev,
+                    blockLength: Number.isNaN(valueNumber) ? 4 : valueNumber,
+                  }))
+                }
+                min={2}
+                max={8}
+              >
+                <NumberInputField placeholder="4" />
+                <NumberInputStepper>
+                  <NumberIncrementStepper />
+                  <NumberDecrementStepper />
+                </NumberInputStepper>
+              </NumberInput>
+              <Text fontSize="sm" color="gray.500" mt={1}>
+                Length of each training block
+              </Text>
+            </FormControl>
+          </CardBody>
+        </Card>
+      )}
+  
+      {/* Wave Loading Settings */}
+      {progressionRules.type === 'wave' && (
+        <Card>
+          <CardHeader>
+            <Heading size="sm" color="teal.500">Wave Loading Pattern</Heading>
+          </CardHeader>
+          <CardBody>
+            <FormControl>
+              <FormLabel>Intensity Pattern (% 1RM)</FormLabel>
+              <HStack spacing={2}>
                 {progressionRules.wavePattern.map((percentage, index) => (
                   <NumberInput
                     key={index}
                     value={percentage}
-                    onChange={(value) => {
+                    onChange={(valueString, valueNumber) => {
                       const newPattern = [...progressionRules.wavePattern];
-                      newPattern[index] = parseInt(value) || 75;
-                      setProgressionRules((prev) => ({
+                      newPattern[index] = Number.isNaN(valueNumber) ? 75 : valueNumber;
+                      setProgressionRules(prev => ({
                         ...prev,
                         wavePattern: newPattern,
                       }));
                     }}
                     min={50}
                     max={100}
+                    size="sm"
                     width="80px"
                   >
                     <NumberInputField />
                   </NumberInput>
                 ))}
               </HStack>
-              <Text fontSize="sm" color="gray.600" mt={2}>
-                Week 1: {progressionRules.wavePattern[0]}%, Week 2:{" "}
-                {progressionRules.wavePattern[1]}%, Week 3:{" "}
-                {progressionRules.wavePattern[2]}%, Week 4:{" "}
-                {progressionRules.wavePattern[3]}%
+              <Text fontSize="sm" color="gray.500" mt={1}>
+                Weekly intensity pattern (Week 1, 2, 3, 4)
               </Text>
             </FormControl>
-          )}
-
-          <Divider my={4} />
-
+          </CardBody>
+        </Card>
+      )}
+  
+      {/* Deload Settings */}
+      <Card>
+        <CardHeader>
+          <Heading size="sm" color="orange.500">Deload & Recovery Settings</Heading>
+        </CardHeader>
+        <CardBody>
           <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
             <FormControl>
-              <FormLabel>Deload Frequency (Every X Weeks)</FormLabel>
+              <FormLabel>Deload Frequency (weeks)</FormLabel>
               <NumberInput
-                value={progressionRules.deloadFrequency}
-                onChange={(value) =>
-                  setProgressionRules((prev) => ({
+                value={progressionRules.deloadFrequency || ""}
+                onChange={(valueString, valueNumber) =>
+                  setProgressionRules(prev => ({
                     ...prev,
-                    deloadFrequency: parseInt(value) || 4,
+                    deloadFrequency: Number.isNaN(valueNumber) ? 4 : valueNumber,
                   }))
                 }
                 min={3}
                 max={8}
               >
-                <NumberInputField />
+                <NumberInputField placeholder="4" />
                 <NumberInputStepper>
                   <NumberIncrementStepper />
                   <NumberDecrementStepper />
                 </NumberInputStepper>
               </NumberInput>
+              <Text fontSize="sm" color="gray.500" mt={1}>
+                How often to include a deload week
+              </Text>
             </FormControl>
-
+  
             <FormControl>
-              <FormLabel>Deload Percentage (%)</FormLabel>
+              <FormLabel>Deload Intensity (%)</FormLabel>
               <NumberInput
-                value={progressionRules.deloadPercentage}
-                onChange={(value) =>
-                  setProgressionRules((prev) => ({
+                value={progressionRules.deloadPercentage || ""}
+                onChange={(valueString, valueNumber) =>
+                  setProgressionRules(prev => ({
                     ...prev,
-                    deloadPercentage: parseInt(value) || 80,
+                    deloadPercentage: Number.isNaN(valueNumber) ? 80 : valueNumber,
                   }))
                 }
                 min={60}
                 max={90}
               >
-                <NumberInputField />
+                <NumberInputField placeholder="80" />
                 <NumberInputStepper>
                   <NumberIncrementStepper />
                   <NumberDecrementStepper />
                 </NumberInputStepper>
               </NumberInput>
+              <Text fontSize="sm" color="gray.500" mt={1}>
+                Percentage of normal training load during deload
+              </Text>
             </FormControl>
           </SimpleGrid>
-
-          <FormControl mt={4}>
-            <HStack>
-              <Switch
-                isChecked={progressionRules.autoGenerate}
-                onChange={(e) =>
-                  setProgressionRules((prev) => ({
-                    ...prev,
-                    autoGenerate: e.target.checked,
-                  }))
-                }
-              />
-              <FormLabel mb={0}>
-                Auto-generate progression for all weeks
-              </FormLabel>
-            </HStack>
-            <Text fontSize="sm" color="gray.600" mt={1}>
-              Automatically apply progression rules to generate the complete
-              program
+        </CardBody>
+      </Card>
+  
+      {/* Progression Preview */}
+      {progressionRules.type && (
+        <Card>
+          <CardHeader>
+            <Heading size="sm" color="teal.500">Progression Preview</Heading>
+          </CardHeader>
+          <CardBody>
+            <Text fontSize="sm" color="gray.600" mb={3}>
+              Based on your settings, here's how progression might look:
             </Text>
-          </FormControl>
-        </Box>
+            
+            {progressionRules.type === 'linear' && (
+              <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
+                {[1, 2, 3, 4].map(week => (
+                  <Box key={week} p={3} bg="teal.50" borderRadius="md" textAlign="center">
+                    <Text fontWeight="bold" fontSize="sm">Week {week}</Text>
+                    <Text fontSize="xs" color="gray.600">
+                      +{(week - 1) * (progressionRules.weightProgression || 2.5)}kg
+                    </Text>
+                  </Box>
+                ))}
+              </SimpleGrid>
+            )}
+  
+            {progressionRules.type === 'wave' && (
+              <SimpleGrid columns={{ base: 2, md: 4 }} spacing={3}>
+                {progressionRules.wavePattern.map((intensity, index) => (
+                  <Box key={index} p={3} bg="blue.50" borderRadius="md" textAlign="center">
+                    <Text fontWeight="bold" fontSize="sm">Week {index + 1}</Text>
+                    <Text fontSize="xs" color="gray.600">{intensity}% 1RM</Text>
+                  </Box>
+                ))}
+              </SimpleGrid>
+            )}
+          </CardBody>
+        </Card>
       )}
     </VStack>
   );
 
-  // Step 4: Week 1 Template Component
-  const renderStep4WeekOne = () => (
+  // Step 4: Week 1 Template Component - Fixed with stable keys and proper focus handling
+ // Step 4: Week 1 Template Component - Fixed with proper focus handling
+// Step 4: Week 1 Template Component - With stable props
+const renderStep4WeekOne = () => {
+  console.log('renderStep4WeekOne called', Date.now());
+
+  return (
     <VStack spacing={6} align="stretch">
       <Box>
         <Heading size="md" mb={4} color="teal.600">
@@ -2124,1043 +2687,1088 @@ function WorkoutPrograms() {
       </Box>
 
       <WeekTemplateEditor
+        key="week-template-editor-stable"
         weekData={weekOneTemplate}
         weekNumber={1}
         trainingStructure={trainingStructure}
         onUpdate={setWeekOneTemplate}
+        selectedDay={selectedTrainingDay}
+        onSelectedDayChange={setSelectedTrainingDay}
       />
     </VStack>
   );
+};
 
-  // Week Template Editor Component
-  const WeekTemplateEditor = ({
-    weekData,
-    weekNumber,
-    trainingStructure,
-    onUpdate,
-  }) => {
-    const [selectedDay, setSelectedDay] = useState(1);
-    const [dayExercises, setDayExercises] = useState([]);
+// Week Template Editor Component - Fixed with focus-friendly inputs
+// Week Template Editor Component - Memoized to prevent unnecessary re-renders
+// Week Template Editor Component - Complete with focus-friendly NumberInputs
+const WeekTemplateEditor = memo(({
+  weekData,
+  weekNumber,
+  trainingStructure,
+  onUpdate,
+  selectedDay,
+  onSelectedDayChange,
+}) => {
+  const [dayExercises, setDayExercises] = useState([]);
 
-    const addExercise = () => {
-      const newExercise = {
-        exercise: "",
-        target_sets: 3,
-        target_reps: 10,
-        target_weight_kg: null,
-        target_rpe: 7,
-        target_rest: 60,
-        load_prescription_p1RM: null,
-        focus: programOverview.Focus,
-        superset: "",
-        exercise_program_note: "",
-        exerciseDetails: null,
-      };
-      const updatedExercises = [...dayExercises, newExercise];
-      setDayExercises(updatedExercises);
+  console.log('WeekTemplateEditor called', Date.now());
 
-      // Update parent state immediately
-      const updatedWeek = {
-        ...weekData,
-        [selectedDay]: updatedExercises,
-      };
-      onUpdate(updatedWeek);
+  const addExercise = () => {
+    const newExercise = {
+      exercise: "",
+      target_sets: 3,
+      target_reps: 10,
+      target_weight_kg: null,
+      target_rpe: 7,
+      target_rest: 60,
+      load_prescription_p1RM: null,
+      focus: programOverview.Focus,
+      superset: "",
+      exercise_program_note: "",
+      exerciseDetails: null,
     };
+    const updatedExercises = [...dayExercises, newExercise];
+    setDayExercises(updatedExercises);
 
-    const updateExercise = (index, field, value) => {
-      const updated = [...dayExercises];
-      updated[index] = { ...updated[index], [field]: value };
-      setDayExercises(updated);
-
-      // Update parent state
-      const updatedWeek = {
-        ...weekData,
-        [selectedDay]: updated,
-      };
-      onUpdate(updatedWeek);
+    const updatedWeek = {
+      ...weekData,
+      [selectedDay]: updatedExercises,
     };
+    onUpdate(updatedWeek);
+  };
 
-    const handleExerciseSelect = (index, exerciseData) => {
-      const updated = [...dayExercises];
-      updated[index] = {
-        ...updated[index],
-        exercise: exerciseData.Exercise,
-        exerciseDetails: exerciseData,
-        // Auto-populate some fields based on exercise data
-        focus: exerciseData.Target_Muscle_Group || updated[index].focus,
-      };
-      setDayExercises(updated);
+  const updateExercise = (index, field, value) => {
+    const updated = [...dayExercises];
+    updated[index] = { ...updated[index], [field]: value };
+    setDayExercises(updated);
 
-      const updatedWeek = {
-        ...weekData,
-        [selectedDay]: updated,
-      };
-      onUpdate(updatedWeek);
+    const updatedWeek = {
+      ...weekData,
+      [selectedDay]: updated,
     };
+    onUpdate(updatedWeek);
+  };
 
-    const removeExercise = (index) => {
-      const updated = dayExercises.filter((_, i) => i !== index);
-      setDayExercises(updated);
-
-      const updatedWeek = {
-        ...weekData,
-        [selectedDay]: updated,
-      };
-      onUpdate(updatedWeek);
+  const handleExerciseSelect = (index, exerciseData) => {
+    const updated = [...dayExercises];
+    updated[index] = {
+      ...updated[index],
+      exercise: exerciseData.Exercise,
+      exerciseDetails: exerciseData,
+      focus: exerciseData.Target_Muscle_Group || updated[index].focus,
     };
+    setDayExercises(updated);
 
-    useEffect(() => {
-      setDayExercises(weekData[selectedDay] || []);
-    }, [selectedDay, weekData]);
+    const updatedWeek = {
+      ...weekData,
+      [selectedDay]: updated,
+    };
+    onUpdate(updatedWeek);
+  };
 
-    return (
-      <Box>
-        <HStack mb={4}>
-          <Text fontWeight="semibold">Training Day:</Text>
-          {Array.from(
-            { length: trainingStructure.daysPerWeek },
-            (_, i) => i + 1
-          ).map((day) => (
-            <Button
-              key={day}
-              size="sm"
-              colorScheme={selectedDay === day ? "teal" : "gray"}
-              variant={selectedDay === day ? "solid" : "outline"}
-              onClick={() => setSelectedDay(day)}
-            >
-              Day {day}
-            </Button>
-          ))}
-        </HStack>
+  const removeExercise = (index) => {
+    const updated = dayExercises.filter((_, i) => i !== index);
+    setDayExercises(updated);
 
-        <Box p={4} border="1px solid" borderColor="gray.200" borderRadius="md">
-          <Flex justify="space-between" align="center" mb={4}>
-            <Text fontWeight="semibold">Day {selectedDay} Exercises</Text>
-            <Button
-              leftIcon={<AddIcon />}
-              size="sm"
-              colorScheme="teal"
-              onClick={addExercise}
-            >
-              Add Exercise
-            </Button>
-          </Flex>
+    const updatedWeek = {
+      ...weekData,
+      [selectedDay]: updated,
+    };
+    onUpdate(updatedWeek);
+  };
 
-          {dayExercises.length === 0 ? (
-            <Box textAlign="center" py={8} bg="gray.50" borderRadius="md">
-              <Text color="gray.500" mb={2}>
-                No exercises added yet for Day {selectedDay}
-              </Text>
-              <Text fontSize="sm" color="gray.400">
-                Click "Add Exercise" to get started
-              </Text>
-            </Box>
-          ) : (
-            <VStack spacing={4} align="stretch">
-              {dayExercises.map((exercise, index) => (
-                <Box
-                  key={index}
-                  p={4}
-                  bg="gray.50"
-                  borderRadius="md"
-                  border="1px solid"
-                  borderColor="gray.200"
+  useEffect(() => {
+    setDayExercises(weekData[selectedDay] || []);
+  }, [selectedDay, weekData]);
+
+  return (
+    <Box>
+      <HStack mb={4}>
+        <Text fontWeight="semibold">Training Day:</Text>
+        {Array.from(
+          { length: trainingStructure.daysPerWeek },
+          (_, i) => i + 1
+        ).map((day) => (
+          <Button
+            key={day}
+            size="sm"
+            colorScheme={selectedDay === day ? "teal" : "gray"}
+            variant={selectedDay === day ? "solid" : "outline"}
+            onClick={() => onSelectedDayChange(day)}
+          >
+            Day {day}
+          </Button>
+        ))}
+      </HStack>
+
+      <Box p={4} border="1px solid" borderColor="gray.200" borderRadius="md">
+        <Flex justify="space-between" align="center" mb={4}>
+          <Text fontWeight="semibold">Day {selectedDay} Exercises</Text>
+          <Button
+            leftIcon={<AddIcon />}
+            size="sm"
+            colorScheme="teal"
+            onClick={addExercise}
+          >
+            Add Exercise
+          </Button>
+        </Flex>
+
+        {dayExercises.length === 0 ? (
+          <Box textAlign="center" py={8} bg="gray.50" borderRadius="md">
+            <Text color="gray.500" mb={2}>
+              No exercises added yet for Day {selectedDay}
+            </Text>
+            <Text fontSize="sm" color="gray.400">
+              Click "Add Exercise" to get started
+            </Text>
+          </Box>
+        ) : (
+          <VStack spacing={4} align="stretch">
+            {dayExercises.map((exercise, index) => (
+              <Box
+                key={`day${selectedDay}-exercise${index}-stable`}
+                p={4}
+                bg="gray.50"
+                borderRadius="md"
+                border="1px solid"
+                borderColor="gray.200"
+              >
+                <Grid
+                  templateColumns="repeat(auto-fit, minmax(200px, 1fr))"
+                  gap={3}
+                  mb={3}
                 >
-                  <Grid
-                    templateColumns="repeat(auto-fit, minmax(200px, 1fr))"
-                    gap={3}
-                    mb={3}
-                  >
-                    <FormControl>
-                      <FormLabel fontSize="sm" fontWeight="semibold">
-                        Exercise *
-                      </FormLabel>
-                      <ExerciseSearchInput
-                        currentValue={exercise.exercise}
-                        onSelectExercise={(exerciseData) =>
-                          handleExerciseSelect(index, exerciseData)
-                        }
-                      />
-                    </FormControl>
+                  <FormControl>
+                    <FormLabel fontSize="sm" fontWeight="semibold">
+                      Exercise *
+                    </FormLabel>
+                    <ExerciseSearchInput
+                      key={`exercise-search-${selectedDay}-${index}-stable`}
+                      currentValue={exercise.exercise}
+                      onSelectExercise={(exerciseData) =>
+                        handleExerciseSelect(index, exerciseData)
+                      }
+                    />
+                  </FormControl>
 
-                    <FormControl>
-                      <FormLabel fontSize="sm">Sets</FormLabel>
-                      <NumberInput
-                        size="sm"
-                        value={exercise.target_sets}
-                        onChange={(value) =>
+                  {/* Sets - Fixed with defaultValue + onBlur */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">Sets</FormLabel>
+                    <NumberInput
+                      size="sm"
+                      defaultValue={exercise.target_sets}
+                      min={1}
+                      max={10}
+                    >
+                      <NumberInputField
+                        onBlur={(e) =>
                           updateExercise(
                             index,
                             "target_sets",
-                            parseInt(value) || 3
+                            parseInt(e.target.value) || 3
                           )
                         }
-                        min={1}
-                        max={10}
-                      >
-                        <NumberInputField />
-                        <NumberInputStepper>
-                          <NumberIncrementStepper />
-                          <NumberDecrementStepper />
-                        </NumberInputStepper>
-                      </NumberInput>
-                    </FormControl>
+                      />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </FormControl>
 
-                    <FormControl>
-                      <FormLabel fontSize="sm">Reps</FormLabel>
-                      <NumberInput
-                        size="sm"
-                        value={exercise.target_reps}
-                        onChange={(value) =>
+                  {/* Reps - Fixed with defaultValue + onBlur */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">Reps</FormLabel>
+                    <NumberInput
+                      size="sm"
+                      defaultValue={exercise.target_reps}
+                      min={1}
+                      max={50}
+                    >
+                      <NumberInputField
+                        onBlur={(e) =>
                           updateExercise(
                             index,
                             "target_reps",
-                            parseInt(value) || 10
+                            parseInt(e.target.value) || 10
                           )
                         }
-                        min={1}
-                        max={50}
-                      >
-                        <NumberInputField />
-                        <NumberInputStepper>
-                          <NumberIncrementStepper />
-                          <NumberDecrementStepper />
-                        </NumberInputStepper>
-                      </NumberInput>
-                    </FormControl>
-                  </Grid>
+                      />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </FormControl>
+                </Grid>
 
-                  <Grid
-                    templateColumns="repeat(auto-fit, minmax(150px, 1fr))"
-                    gap={3}
-                    mb={3}
-                  >
-                    <FormControl>
-                      <FormLabel fontSize="sm">Weight (kg)</FormLabel>
-                      <NumberInput
-                        size="sm"
-                        value={exercise.target_weight_kg || ""}
-                        onChange={(value) =>
+                <Grid
+                  templateColumns="repeat(auto-fit, minmax(150px, 1fr))"
+                  gap={3}
+                  mb={3}
+                >
+                  {/* Weight - Fixed with defaultValue + onBlur */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">Weight (kg)</FormLabel>
+                    <NumberInput
+                      size="sm"
+                      defaultValue={exercise.target_weight_kg || ""}
+                      min={0}
+                      precision={1}
+                      step={0.5}
+                    >
+                      <NumberInputField
+                        onBlur={(e) =>
                           updateExercise(
                             index,
                             "target_weight_kg",
-                            parseInt(value) || null
+                            parseFloat(e.target.value) || null
                           )
                         }
-                        min={0}
-                        precision={1}
-                        step={0.5}
-                      >
-                        <NumberInputField />
-                        <NumberInputStepper>
-                          <NumberIncrementStepper />
-                          <NumberDecrementStepper />
-                        </NumberInputStepper>
-                      </NumberInput>
-                    </FormControl>
+                      />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </FormControl>
 
-                    <FormControl>
-                      <FormLabel fontSize="sm">RPE</FormLabel>
-                      <NumberInput
-                        size="sm"
-                        value={exercise.target_rpe}
-                        onChange={(value) =>
+                  {/* RPE - Fixed with defaultValue + onBlur */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">RPE</FormLabel>
+                    <NumberInput
+                      size="sm"
+                      defaultValue={exercise.target_rpe}
+                      min={1}
+                      max={10}
+                    >
+                      <NumberInputField
+                        onBlur={(e) =>
                           updateExercise(
                             index,
                             "target_rpe",
-                            parseInt(value) || 7
+                            parseInt(e.target.value) || 7
                           )
                         }
-                        min={1}
-                        max={10}
-                      >
-                        <NumberInputField />
-                        <NumberInputStepper>
-                          <NumberIncrementStepper />
-                          <NumberDecrementStepper />
-                        </NumberInputStepper>
-                      </NumberInput>
-                    </FormControl>
+                      />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </FormControl>
 
-                    <FormControl>
-                      <FormLabel fontSize="sm">Rest (seconds)</FormLabel>
-                      <NumberInput
-                        size="sm"
-                        value={exercise.target_rest}
-                        onChange={(value) =>
+                  {/* Rest - Fixed with defaultValue + onBlur */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">Rest (seconds)</FormLabel>
+                    <NumberInput
+                      size="sm"
+                      defaultValue={exercise.target_rest}
+                      min={30}
+                      max={300}
+                      step={15}
+                    >
+                      <NumberInputField
+                        onBlur={(e) =>
                           updateExercise(
                             index,
                             "target_rest",
-                            parseInt(value) || 60
+                            parseInt(e.target.value) || 60
                           )
                         }
-                        min={30}
-                        max={300}
-                        step={15}
-                      >
-                        <NumberInputField />
-                        <NumberInputStepper>
-                          <NumberIncrementStepper />
-                          <NumberDecrementStepper />
-                        </NumberInputStepper>
-                      </NumberInput>
-                    </FormControl>
+                      />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </FormControl>
 
-                    <FormControl>
-                      <FormLabel fontSize="sm">Load % 1RM</FormLabel>
-                      <NumberInput
-                        size="sm"
-                        value={exercise.load_prescription_p1RM || ""}
-                        onChange={(value) =>
+                  {/* Load % 1RM - Fixed with defaultValue + onBlur */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">Load % 1RM</FormLabel>
+                    <NumberInput
+                      size="sm"
+                      defaultValue={exercise.load_prescription_p1RM || ""}
+                      min={30}
+                      max={100}
+                      precision={1}
+                      step={2.5}
+                    >
+                      <NumberInputField
+                        onBlur={(e) =>
                           updateExercise(
                             index,
                             "load_prescription_p1RM",
-                            parseFloat(value) || null
+                            parseFloat(e.target.value) || null
                           )
                         }
-                        min={30}
-                        max={100}
-                        precision={1}
-                        step={2.5}
-                      >
-                        <NumberInputField />
-                        <NumberInputStepper>
-                          <NumberIncrementStepper />
-                          <NumberDecrementStepper />
-                        </NumberInputStepper>
-                      </NumberInput>
-                    </FormControl>
-
-                    {/* NEW: Superset Field */}
-                    <FormControl>
-                      <FormLabel fontSize="sm">Superset</FormLabel>
-                      <Input
-                        size="sm"
-                        value={exercise.superset || ""}
-                        onChange={(e) =>
-                          updateExercise(index, "superset", e.target.value)
-                        }
-                        placeholder="e.g., A1, A2, B1..."
                       />
-                    </FormControl>
-                  </Grid>
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  </FormControl>
 
-                  {/* Exercise Details Preview */}
-                  {/* Exercise Details Preview - Enhanced with Video */}
-                  {/* Exercise Details Preview - Enhanced with Video and Exercise_Notes */}
-                  {/* Exercise Details Preview - Collapsible with Video and Exercise_Notes */}
-                  {exercise.exerciseDetails && (
-                    <Accordion allowToggle mt={3}>
-                      <AccordionItem
-                        border="1px solid"
-                        borderColor="blue.200"
-                        borderRadius="md"
-                      >
-                        <AccordionButton
-                          _hover={{ bg: "blue.50" }}
-                          borderRadius="md"
-                          p={3}
-                        >
-                          <Box flex="1" textAlign="left">
-                            <HStack>
-                              <Text
-                                fontSize="sm"
-                                fontWeight="semibold"
-                                color="blue.600"
-                              >
-                                📋 Exercise Details
-                              </Text>
-                              {(exercise.exerciseDetails.Favorite === "Yes" ||
-                                exercise.exerciseDetails.Favorite === "Y") && (
-                                <Badge colorScheme="yellow" size="sm">
-                                  ⭐ Favorite
-                                </Badge>
-                              )}
-                            </HStack>
-                          </Box>
-                          <AccordionIcon color="blue.600" />
-                        </AccordionButton>
-
-                        <AccordionPanel pb={4} bg="blue.50">
-                          {/* Video Demonstration - Show prominently if available */}
-                          {exercise.exerciseDetails.Video_Demonstration && (
-                            <Box
-                              mb={3}
-                              p={2}
-                              bg="white"
-                              borderRadius="md"
-                              border="1px solid"
-                              borderColor="blue.200"
-                            >
-                              <Text
-                                fontSize="xs"
-                                fontWeight="semibold"
-                                mb={1}
-                                color="blue.600"
-                              >
-                                🎥 Video Demonstration:
-                              </Text>
-                              {exercise.exerciseDetails.Video_Demonstration.includes(
-                                "youtube.com"
-                              ) ||
-                              exercise.exerciseDetails.Video_Demonstration.includes(
-                                "youtu.be"
-                              ) ? (
-                                <Link
-                                  href={
-                                    exercise.exerciseDetails.Video_Demonstration
-                                  }
-                                  isExternal
-                                  color="blue.500"
-                                  fontSize="xs"
-                                  fontWeight="medium"
-                                  _hover={{
-                                    textDecoration: "underline",
-                                    color: "blue.600",
-                                  }}
-                                >
-                                  Watch on YouTube 🎥
-                                </Link>
-                              ) : exercise.exerciseDetails.Video_Demonstration.startsWith(
-                                  "http"
-                                ) ? (
-                                <Link
-                                  href={
-                                    exercise.exerciseDetails.Video_Demonstration
-                                  }
-                                  isExternal
-                                  color="blue.500"
-                                  fontSize="xs"
-                                  fontWeight="medium"
-                                  _hover={{
-                                    textDecoration: "underline",
-                                    color: "blue.600",
-                                  }}
-                                >
-                                  Watch Video 🎥
-                                </Link>
-                              ) : (
-                                <Text fontSize="xs" color="gray.600">
-                                  {exercise.exerciseDetails.Video_Demonstration}
-                                </Text>
-                              )}
-                            </Box>
-                          )}
-
-                          <SimpleGrid
-                            columns={{ base: 1, md: 2 }}
-                            spacing={2}
-                            fontSize="xs"
-                            mb={3}
-                          >
-                            {exercise.exerciseDetails.Target_Muscle_Group && (
-                              <Text>
-                                <strong>Target:</strong>{" "}
-                                {exercise.exerciseDetails.Target_Muscle_Group}
-                              </Text>
-                            )}
-                            {exercise.exerciseDetails.Primary_Equipment && (
-                              <Text>
-                                <strong>Equipment:</strong>{" "}
-                                {exercise.exerciseDetails.Primary_Equipment}
-                              </Text>
-                            )}
-                            {exercise.exerciseDetails["1_RM_Alex"] && (
-                              <Text>
-                                <strong>1RM:</strong>{" "}
-                                {exercise.exerciseDetails["1_RM_Alex"]}kg
-                              </Text>
-                            )}
-                            {exercise.exerciseDetails.Difficulty_Level && (
-                              <Text>
-                                <strong>Difficulty:</strong>{" "}
-                                {exercise.exerciseDetails.Difficulty_Level}
-                              </Text>
-                            )}
-                          </SimpleGrid>
-
-                          {/* Exercise Notes - Prioritize Exercise_Notes, fallback to In-Depth_Explanation */}
-                          {(exercise.exerciseDetails.Exercise_Notes ||
-                            exercise.exerciseDetails[
-                              "In-Depth_Explanation"
-                            ]) && (
-                            <Box
-                              p={2}
-                              bg="white"
-                              borderRadius="md"
-                              border="1px solid"
-                              borderColor="gray.200"
-                            >
-                              <Text
-                                fontSize="xs"
-                                fontWeight="semibold"
-                                mb={1}
-                                color="gray.600"
-                              >
-                                📝 Exercise Notes:
-                              </Text>
-                              <Text
-                                fontSize="xs"
-                                color="gray.700"
-                                lineHeight="1.4"
-                              >
-                                {renderTextWithLinks(
-                                  exercise.exerciseDetails.Exercise_Notes ||
-                                    exercise.exerciseDetails[
-                                      "In-Depth_Explanation"
-                                    ]
-                                )}
-                              </Text>
-                            </Box>
-                          )}
-                        </AccordionPanel>
-                      </AccordionItem>
-                    </Accordion>
-                  )}
-
-                  <Flex justify="space-between" align="center">
-                    <FormControl width="200px">
-                      <FormLabel fontSize="sm">
-                        Exercise Notes (Program)
-                      </FormLabel>
-                      <Input
-                        size="sm"
-                        value={exercise.exercise_program_note || ""}
-                        onChange={(e) =>
-                          updateExercise(
-                            index,
-                            "exercise_program_note",
-                            e.target.value
-                          )
-                        }
-                        placeholder="Optional notes..."
-                      />
-                    </FormControl>
-
-                    <IconButton
-                      icon={<DeleteIcon />}
+                  {/* Superset - Text field with focus-friendly approach */}
+                  <FormControl>
+                    <FormLabel fontSize="sm">Superset</FormLabel>
+                    <Input
+                      key={`superset-${selectedDay}-${index}-stable`}
                       size="sm"
-                      colorScheme="red"
-                      variant="ghost"
-                      onClick={() => removeExercise(index)}
-                      aria-label="Remove exercise"
+                      defaultValue={exercise.superset || ""}
+                      onBlur={(e) =>
+                        updateExercise(index, "superset", e.target.value)
+                      }
+                      placeholder="e.g., A1, A2, B1..."
                     />
-                  </Flex>
-                </Box>
-              ))}
-            </VStack>
-          )}
-        </Box>
-      </Box>
-    );
-  };
+                  </FormControl>
+                </Grid>
 
-  // Step 5: Auto-Generate Program Component
-  const renderStep5Generate = () => {
-    const generateProgram = () => {
-      if (!weekOneTemplate || Object.keys(weekOneTemplate).length === 0) {
-        setError(
-          "Please create a Week 1 template before generating the program"
-        );
-        return;
-      }
-
-      const totalWeeks = programOverview.Program_Length_in_Weeks || 4;
-      const generated = {};
-
-      for (let week = 1; week <= totalWeeks; week++) {
-        generated[week] = {};
-
-        // Check if it's a deload week
-        const isDeloadWeek = week % progressionRules.deloadFrequency === 0;
-
-        Object.keys(weekOneTemplate).forEach((day) => {
-          const dayNumber = parseInt(day);
-          generated[week][dayNumber] = weekOneTemplate[day].map((exercise) => {
-            const generatedExercise = { ...exercise };
-
-            if (isDeloadWeek) {
-              // Apply deload
-              generatedExercise.target_weight_kg = exercise.target_weight_kg
-                ? Math.round(
-                    exercise.target_weight_kg *
-                      (progressionRules.deloadPercentage / 100)
-                  )
-                : exercise.target_weight_kg;
-              generatedExercise.target_rpe = Math.max(
-                1,
-                exercise.target_rpe - 2
-              );
-              generatedExercise.load_prescription_p1RM =
-                exercise.load_prescription_p1RM
-                  ? exercise.load_prescription_p1RM *
-                    (progressionRules.deloadPercentage / 100)
-                  : exercise.load_prescription_p1RM;
-            } else {
-              // Apply progression based on type
-              switch (progressionRules.type) {
-                case "linear":
-                  generatedExercise.target_weight_kg = exercise.target_weight_kg
-                    ? exercise.target_weight_kg +
-                      progressionRules.weightProgression * (week - 1)
-                    : exercise.target_weight_kg;
-                  break;
-
-                case "double":
-                  // For double progression, increase reps first, then weight
-                  const repIncrease = Math.min(
-                    progressionRules.repProgression * (week - 1),
-                    5
-                  );
-                  generatedExercise.target_reps =
-                    exercise.target_reps + repIncrease;
-
-                  if (repIncrease >= 5) {
-                    generatedExercise.target_weight_kg =
-                      exercise.target_weight_kg
-                        ? exercise.target_weight_kg +
-                          progressionRules.weightProgression
-                        : exercise.target_weight_kg;
-                    generatedExercise.target_reps = exercise.target_reps; // Reset reps
-                  }
-                  break;
-
-                case "percentage":
-                  const percentageMultiplier =
-                    1 +
-                    (progressionRules.percentageIncrease / 100) * (week - 1);
-                  generatedExercise.target_weight_kg = exercise.target_weight_kg
-                    ? Math.round(
-                        exercise.target_weight_kg * percentageMultiplier
-                      )
-                    : exercise.target_weight_kg;
-                  generatedExercise.load_prescription_p1RM =
-                    exercise.load_prescription_p1RM
-                      ? Math.min(
-                          100,
-                          exercise.load_prescription_p1RM * percentageMultiplier
-                        )
-                      : exercise.load_prescription_p1RM;
-                  break;
-
-                case "wave":
-                  const waveIndex =
-                    (week - 1) % progressionRules.wavePattern.length;
-                  const wavePercentage =
-                    progressionRules.wavePattern[waveIndex];
-                  generatedExercise.load_prescription_p1RM = wavePercentage;
-                  break;
-
-                case "block":
-                  const blockNumber = Math.ceil(
-                    week / progressionRules.blockLength
-                  );
-                  const blockMultiplier = 1 + 0.05 * (blockNumber - 1); // 5% increase per block
-                  generatedExercise.target_weight_kg = exercise.target_weight_kg
-                    ? Math.round(exercise.target_weight_kg * blockMultiplier)
-                    : exercise.target_weight_kg;
-                  break;
-
-                default:
-                  break;
-              }
-            }
-
-            return generatedExercise;
-          });
-        });
-      }
-
-      setGeneratedProgram(generated);
-      setSuccessMessage("Program generated successfully!");
-      setTimeout(() => setSuccessMessage(null), 3000);
-    };
-
-    return (
-      <VStack spacing={6} align="stretch">
-        <Box>
-          <Heading size="md" mb={4} color="teal.600">
-            Auto-Generate Complete Program
-          </Heading>
-          <Text color="gray.600" mb={6}>
-            Generate the complete program based on your Week 1 template and
-            progression rules.
-          </Text>
-        </Box>
-
-        <Box p={4} bg="blue.50" borderRadius="md">
-          <Text fontWeight="semibold" mb={2}>
-            Generation Preview:
-          </Text>
-          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
-            <VStack align="start" spacing={1}>
-              <Text fontSize="sm">
-                <strong>Total Weeks:</strong>{" "}
-                {programOverview.Program_Length_in_Weeks}
-              </Text>
-              <Text fontSize="sm">
-                <strong>Progression Type:</strong> {progressionRules.type}
-              </Text>
-              <Text fontSize="sm">
-                <strong>Training Days:</strong> {trainingStructure.daysPerWeek}{" "}
-                per week
-              </Text>
-            </VStack>
-            <VStack align="start" spacing={1}>
-              <Text fontSize="sm">
-                <strong>Deload Every:</strong>{" "}
-                {progressionRules.deloadFrequency} weeks
-              </Text>
-              <Text fontSize="sm">
-                <strong>Week 1 Exercises:</strong>{" "}
-                {Object.values(weekOneTemplate).flat().length}
-              </Text>
-              <Text fontSize="sm">
-                <strong>Total Exercises:</strong>{" "}
-                {Object.values(weekOneTemplate).flat().length *
-                  programOverview.Program_Length_in_Weeks}
-              </Text>
-            </VStack>
-          </SimpleGrid>
-        </Box>
-
-        <Button
-          colorScheme="teal"
-          size="lg"
-          onClick={generateProgram}
-          isDisabled={
-            !weekOneTemplate || Object.keys(weekOneTemplate).length === 0
-          }
-        >
-          Generate Complete Program
-        </Button>
-
-        {Object.keys(generatedProgram).length > 0 && (
-          <Box>
-            <Text fontWeight="semibold" mb={4}>
-              Generated Program Preview:
-            </Text>
-            <Accordion allowMultiple>
-              {Object.entries(generatedProgram)
-                .slice(0, 3)
-                .map(([week, weekData]) => (
-                  <AccordionItem key={week}>
-                    <AccordionButton>
-                      <Box flex="1" textAlign="left">
-                        <Text fontWeight="semibold">Week {week}</Text>
-                        <Text fontSize="sm" color="gray.600">
-                          {week % progressionRules.deloadFrequency === 0
-                            ? "Deload Week"
-                            : "Training Week"}
-                        </Text>
-                      </Box>
-                      <AccordionIcon />
-                    </AccordionButton>
-                    <AccordionPanel pb={4}>
-                      {Object.entries(weekData).map(([day, exercises]) => (
-                        <Box key={day} mb={4}>
-                          <Text fontWeight="semibold" mb={2}>
-                            Day {day}:
-                          </Text>
-                          <VStack align="start" spacing={1}>
-                            {exercises.map((exercise, idx) => (
-                              <Text key={idx} fontSize="sm">
-                                • {exercise.exercise || "Exercise"} -{" "}
-                                {exercise.target_sets}x{exercise.target_reps}
-                                {exercise.target_weight_kg &&
-                                  ` @ ${exercise.target_weight_kg}kg`}
-                                {exercise.target_rpe &&
-                                  ` RPE ${exercise.target_rpe}`}
-                              </Text>
-                            ))}
-                          </VStack>
-                        </Box>
-                      ))}
-                    </AccordionPanel>
-                  </AccordionItem>
-                ))}
-              {Object.keys(generatedProgram).length > 3 && (
-                <Text fontSize="sm" color="gray.600" textAlign="center" mt={2}>
-                  ... and {Object.keys(generatedProgram).length - 3} more weeks
-                </Text>
-              )}
-            </Accordion>
-          </Box>
-        )}
-      </VStack>
-    );
-  };
-
-  // Step 6: Fine-tuning Component
-  const renderStep6FineTune = () => {
-    const [selectedWeek, setSelectedWeek] = useState(1);
-    const [selectedDay, setSelectedDay] = useState(1);
-
-    const updateGeneratedExercise = (
-      week,
-      day,
-      exerciseIndex,
-      field,
-      value
-    ) => {
-      const updated = { ...generatedProgram };
-      if (!updated[week]) updated[week] = {};
-      if (!updated[week][day]) updated[week][day] = [];
-
-      updated[week][day][exerciseIndex] = {
-        ...updated[week][day][exerciseIndex],
-        [field]: value,
-      };
-
-      setGeneratedProgram(updated);
-    };
-
-    const addCustomExercise = (week, day) => {
-      const updated = { ...generatedProgram };
-      if (!updated[week]) updated[week] = {};
-      if (!updated[week][day]) updated[week][day] = [];
-
-      updated[week][day].push({
-        exercise: "",
-        target_sets: 3,
-        target_reps: 10,
-        target_weight_kg: null,
-        target_rpe: 7,
-        target_rest: 60,
-        load_prescription_p1RM: null,
-        focus: programOverview.Focus,
-      });
-
-      setGeneratedProgram(updated);
-    };
-
-    return (
-      <VStack spacing={6} align="stretch">
-        <Box>
-          <Heading size="md" mb={4} color="teal.600">
-            Fine-tune Your Program
-          </Heading>
-          <Text color="gray.600" mb={6}>
-            Make final adjustments to individual weeks and exercises before
-            saving.
-          </Text>
-        </Box>
-
-        <HStack spacing={4} wrap="wrap">
-          <FormControl width="150px">
-            <FormLabel>Week</FormLabel>
-            <Select
-              value={selectedWeek}
-              onChange={(e) => setSelectedWeek(parseInt(e.target.value))}
-            >
-              {Object.keys(generatedProgram).map((week) => (
-                <option key={week} value={week}>
-                  Week {week}
-                </option>
-              ))}
-            </Select>
-          </FormControl>
-
-          <FormControl width="150px">
-            <FormLabel>Day</FormLabel>
-            <Select
-              value={selectedDay}
-              onChange={(e) => setSelectedDay(parseInt(e.target.value))}
-            >
-              {generatedProgram[selectedWeek] &&
-                Object.keys(generatedProgram[selectedWeek]).map((day) => (
-                  <option key={day} value={day}>
-                    Day {day}
-                  </option>
-                ))}
-            </Select>
-          </FormControl>
-        </HStack>
-
-        {generatedProgram[selectedWeek] &&
-          generatedProgram[selectedWeek][selectedDay] && (
-            <Box
-              p={4}
-              border="1px solid"
-              borderColor="gray.200"
-              borderRadius="md"
-            >
-              <Flex justify="space-between" align="center" mb={4}>
-                <Text fontWeight="semibold">
-                  Week {selectedWeek}, Day {selectedDay} Exercises
-                </Text>
-                <Button
-                  leftIcon={<AddIcon />}
-                  size="sm"
-                  colorScheme="teal"
-                  onClick={() => addCustomExercise(selectedWeek, selectedDay)}
-                >
-                  Add Exercise
-                </Button>
-              </Flex>
-
-              <VStack spacing={4} align="stretch">
-                {generatedProgram[selectedWeek][selectedDay].map(
-                  (exercise, index) => (
-                    <Box key={index} p={4} bg="gray.50" borderRadius="md">
-                      <Grid
-                        templateColumns="repeat(auto-fit, minmax(150px, 1fr))"
-                        gap={3}
+                {/* Exercise Details Preview */}
+                {exercise.exerciseDetails && (
+                  <Accordion allowToggle mt={3}>
+                    <AccordionItem
+                      border="1px solid"
+                      borderColor="blue.200"
+                      borderRadius="md"
+                    >
+                      <AccordionButton
+                        _hover={{ bg: "blue.50" }}
+                        borderRadius="md"
+                        p={3}
                       >
-                        <FormControl>
-                          <FormLabel fontSize="sm">Exercise</FormLabel>
-                          <Input
-                            size="sm"
-                            value={exercise.exercise}
-                            onChange={(e) =>
-                              updateGeneratedExercise(
-                                selectedWeek,
-                                selectedDay,
-                                index,
-                                "exercise",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </FormControl>
+                        <Box flex="1" textAlign="left">
+                          <HStack>
+                            <Text
+                              fontSize="sm"
+                              fontWeight="semibold"
+                              color="blue.600"
+                            >
+                              📋 Exercise Details
+                            </Text>
+                            {(exercise.exerciseDetails.Favorite === "Yes" ||
+                              exercise.exerciseDetails.Favorite === "Y") && (
+                              <Badge colorScheme="yellow" size="sm">
+                                ⭐ Favorite
+                              </Badge>
+                            )}
+                          </HStack>
+                        </Box>
+                        <AccordionIcon color="blue.600" />
+                      </AccordionButton>
 
-                        <FormControl>
-                          <FormLabel fontSize="sm">Sets</FormLabel>
-                          <NumberInput
-                            size="sm"
-                            value={exercise.target_sets}
-                            onChange={(value) =>
-                              updateGeneratedExercise(
-                                selectedWeek,
-                                selectedDay,
-                                index,
-                                "target_sets",
-                                parseInt(value) || 3
-                              )
-                            }
-                            min={1}
-                            max={10}
+                      <AccordionPanel pb={4} bg="blue.50">
+                        {/* Video Demonstration */}
+                        {exercise.exerciseDetails.Video_Demonstration && (
+                          <Box
+                            mb={3}
+                            p={2}
+                            bg="white"
+                            borderRadius="md"
+                            border="1px solid"
+                            borderColor="blue.200"
                           >
-                            <NumberInputField />
-                            <NumberInputStepper>
-                              <NumberIncrementStepper />
-                              <NumberDecrementStepper />
-                            </NumberInputStepper>
-                          </NumberInput>
-                        </FormControl>
+                            <Text
+                              fontSize="xs"
+                              fontWeight="semibold"
+                              mb={1}
+                              color="blue.600"
+                            >
+                              🎥 Video Demonstration:
+                            </Text>
+                            {exercise.exerciseDetails.Video_Demonstration.includes(
+                              "youtube.com"
+                            ) ||
+                            exercise.exerciseDetails.Video_Demonstration.includes(
+                              "youtu.be"
+                            ) ? (
+                              <Link
+                                href={
+                                  exercise.exerciseDetails.Video_Demonstration
+                                }
+                                isExternal
+                                color="blue.500"
+                                fontSize="xs"
+                                fontWeight="medium"
+                                _hover={{
+                                  textDecoration: "underline",
+                                  color: "blue.600",
+                                }}
+                              >
+                                Watch on YouTube 🎥
+                              </Link>
+                            ) : exercise.exerciseDetails.Video_Demonstration.startsWith(
+                                "http"
+                              ) ? (
+                              <Link
+                                href={
+                                  exercise.exerciseDetails.Video_Demonstration
+                                }
+                                isExternal
+                                color="blue.500"
+                                fontSize="xs"
+                                fontWeight="medium"
+                                _hover={{
+                                  textDecoration: "underline",
+                                  color: "blue.600",
+                                }}
+                              >
+                                Watch Video 🎥
+                              </Link>
+                            ) : (
+                              <Text fontSize="xs" color="gray.600">
+                                {exercise.exerciseDetails.Video_Demonstration}
+                              </Text>
+                            )}
+                          </Box>
+                        )}
 
-                        <FormControl>
-                          <FormLabel fontSize="sm">Reps</FormLabel>
-                          <NumberInput
-                            size="sm"
-                            value={exercise.target_reps}
-                            onChange={(value) =>
-                              updateGeneratedExercise(
-                                selectedWeek,
-                                selectedDay,
-                                index,
-                                "target_reps",
-                                parseInt(value) || 10
-                              )
-                            }
-                            min={1}
-                            max={50}
-                          >
-                            <NumberInputField />
-                            <NumberInputStepper>
-                              <NumberIncrementStepper />
-                              <NumberDecrementStepper />
-                            </NumberInputStepper>
-                          </NumberInput>
-                        </FormControl>
+                        <SimpleGrid
+                          columns={{ base: 1, md: 2 }}
+                          spacing={2}
+                          fontSize="xs"
+                          mb={3}
+                        >
+                          {exercise.exerciseDetails.Target_Muscle_Group && (
+                            <Text>
+                              <strong>Target:</strong>{" "}
+                              {exercise.exerciseDetails.Target_Muscle_Group}
+                            </Text>
+                          )}
+                          {exercise.exerciseDetails.Primary_Equipment && (
+                            <Text>
+                              <strong>Equipment:</strong>{" "}
+                              {exercise.exerciseDetails.Primary_Equipment}
+                            </Text>
+                          )}
+                          {exercise.exerciseDetails["1_RM_Alex"] && (
+                            <Text>
+                              <strong>1RM:</strong>{" "}
+                              {exercise.exerciseDetails["1_RM_Alex"]}kg
+                            </Text>
+                          )}
+                          {exercise.exerciseDetails.Difficulty_Level && (
+                            <Text>
+                              <strong>Difficulty:</strong>{" "}
+                              {exercise.exerciseDetails.Difficulty_Level}
+                            </Text>
+                          )}
+                        </SimpleGrid>
 
-                        <FormControl>
-                          <FormLabel fontSize="sm">Weight (kg)</FormLabel>
-                          <NumberInput
-                            size="sm"
-                            value={exercise.target_weight_kg || ""}
-                            onChange={(value) =>
-                              updateGeneratedExercise(
-                                selectedWeek,
-                                selectedDay,
-                                index,
-                                "target_weight_kg",
-                                parseInt(value) || null
-                              )
-                            }
-                            min={0}
-                            precision={1}
-                            step={0.5}
+                        {/* Exercise Notes */}
+                        {(exercise.exerciseDetails.Exercise_Notes ||
+                          exercise.exerciseDetails["In-Depth_Explanation"]) && (
+                          <Box
+                            p={2}
+                            bg="white"
+                            borderRadius="md"
+                            border="1px solid"
+                            borderColor="gray.200"
                           >
-                            <NumberInputField />
-                            <NumberInputStepper>
-                              <NumberIncrementStepper />
-                              <NumberDecrementStepper />
-                            </NumberInputStepper>
-                          </NumberInput>
-                        </FormControl>
-
-                        <FormControl>
-                          <FormLabel fontSize="sm">RPE</FormLabel>
-                          <NumberInput
-                            size="sm"
-                            value={exercise.target_rpe}
-                            onChange={(value) =>
-                              updateGeneratedExercise(
-                                selectedWeek,
-                                selectedDay,
-                                index,
-                                "target_rpe",
-                                parseInt(value) || 7
-                              )
-                            }
-                            min={1}
-                            max={10}
-                          >
-                            <NumberInputField />
-                            <NumberInputStepper>
-                              <NumberIncrementStepper />
-                              <NumberDecrementStepper />
-                            </NumberInputStepper>
-                          </NumberInput>
-                        </FormControl>
-
-                        <FormControl>
-                          <FormLabel fontSize="sm">Load % 1RM</FormLabel>
-                          <NumberInput
-                            size="sm"
-                            value={exercise.load_prescription_p1RM || ""}
-                            onChange={(value) =>
-                              updateGeneratedExercise(
-                                selectedWeek,
-                                selectedDay,
-                                index,
-                                "load_prescription_p1RM",
-                                parseFloat(value) || null
-                              )
-                            }
-                            min={30}
-                            max={100}
-                            precision={1}
-                            step={2.5}
-                          >
-                            <NumberInputField />
-                            <NumberInputStepper>
-                              <NumberIncrementStepper />
-                              <NumberDecrementStepper />
-                            </NumberInputStepper>
-                          </NumberInput>
-                        </FormControl>
-                      </Grid>
-                    </Box>
-                  )
+                            <Text
+                              fontSize="xs"
+                              fontWeight="semibold"
+                              mb={1}
+                              color="gray.600"
+                            >
+                              📝 Exercise Notes:
+                            </Text>
+                            <Text
+                              fontSize="xs"
+                              color="gray.700"
+                              lineHeight="1.4"
+                            >
+                              {renderTextWithLinks(
+                                exercise.exerciseDetails.Exercise_Notes ||
+                                  exercise.exerciseDetails["In-Depth_Explanation"]
+                              )}
+                            </Text>
+                          </Box>
+                        )}
+                      </AccordionPanel>
+                    </AccordionItem>
+                  </Accordion>
                 )}
+
+                <Flex justify="space-between" align="center" mt={3}>
+                  <FormControl width="200px">
+                    <FormLabel fontSize="sm">
+                      Exercise Notes (Program)
+                    </FormLabel>
+                    <Input
+                      key={`program-notes-${selectedDay}-${index}-stable`}
+                      size="sm"
+                      defaultValue={exercise.exercise_program_note || ""}
+                      onBlur={(e) =>
+                        updateExercise(
+                          index,
+                          "exercise_program_note",
+                          e.target.value
+                        )
+                      }
+                      placeholder="Optional notes..."
+                    />
+                  </FormControl>
+
+                  <IconButton
+                    icon={<DeleteIcon />}
+                    size="sm"
+                    colorScheme="red"
+                    variant="ghost"
+                    onClick={() => removeExercise(index)}
+                    aria-label="Remove exercise"
+                  />
+                </Flex>
+              </Box>
+            ))}
+          </VStack>
+        )}
+      </Box>
+    </Box>
+  );
+});
+
+WeekTemplateEditor.displayName = 'WeekTemplateEditor';
+  // Step 5: Auto-Generate Program Component
+  const renderStep5Generate = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Heading size="md" mb={4} color="teal.600">
+          Generate Complete Program
+        </Heading>
+        <Text color="gray.600" mb={6}>
+          Based on your settings, we'll automatically generate your complete training program with progression applied to each week.
+        </Text>
+      </Box>
+  
+      {/* Program Summary */}
+      <Card>
+        <CardHeader>
+          <Heading size="sm" color="teal.500">Program Summary</Heading>
+        </CardHeader>
+        <CardBody>
+          <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={4}>
+            <Stat>
+              <StatLabel>Program Name</StatLabel>
+              <StatNumber fontSize="md">{programOverview.Program_Name || "Untitled Program"}</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel>Duration</StatLabel>
+              <StatNumber>{programOverview.Program_Length_in_Weeks || 0} weeks</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel>Training Days</StatLabel>
+              <StatNumber>{trainingStructure.daysPerWeek || 3} days/week</StatNumber>
+            </Stat>
+            <Stat>
+              <StatLabel>Structure</StatLabel>
+              <StatNumber fontSize="sm">
+                {TRAINING_STRUCTURES.find(s => s.value === trainingStructure.type)?.label || "Custom"}
+              </StatNumber>
+            </Stat>
+          </SimpleGrid>
+        </CardBody>
+      </Card>
+  
+      {/* Progression Preview */}
+      <Card>
+        <CardHeader>
+          <Heading size="sm" color="teal.500">Progression Strategy</Heading>
+        </CardHeader>
+        <CardBody>
+          <VStack spacing={4} align="stretch">
+            <HStack spacing={4}>
+              <Badge colorScheme="blue" p={2}>
+                {PROGRESSION_TYPES.find(p => p.value === progressionRules.type)?.label || "Linear"}
+              </Badge>
+              {progressionRules.autoGenerate && (
+                <Badge colorScheme="green" p={2}>Auto-Generated</Badge>
+              )}
+            </HStack>
+  
+            <Text fontSize="sm" color="gray.600">
+              {PROGRESSION_TYPES.find(p => p.value === progressionRules.type)?.description}
+            </Text>
+  
+            {/* Progression Details */}
+            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+              {progressionRules.type === 'linear' && (
+                <Box p={3} bg="blue.50" borderRadius="md">
+                  <Text fontWeight="bold" fontSize="sm">Weight Progression</Text>
+                  <Text fontSize="sm" color="gray.600">
+                    +{progressionRules.weightProgression || 2.5}kg per week
+                  </Text>
+                </Box>
+              )}
+  
+              <Box p={3} bg="orange.50" borderRadius="md">
+                <Text fontWeight="bold" fontSize="sm">Deload Schedule</Text>
+                <Text fontSize="sm" color="gray.600">
+                  Every {progressionRules.deloadFrequency || 4} weeks at {progressionRules.deloadPercentage || 80}%
+                </Text>
+              </Box>
+  
+              <Box p={3} bg="purple.50" borderRadius="md">
+                <Text fontWeight="bold" fontSize="sm">Week 1 Template</Text>
+                <Text fontSize="sm" color="gray.600">
+                  {getTotalExercisesInTemplate()} exercises configured
+                </Text>
+              </Box>
+            </SimpleGrid>
+          </VStack>
+        </CardBody>
+      </Card>
+  
+      {/* Generation Controls */}
+      <Card>
+        <CardHeader>
+          <Heading size="sm" color="teal.500">Program Generation</Heading>
+        </CardHeader>
+        <CardBody>
+          <VStack spacing={4} align="stretch">
+            <Alert status="info">
+              <AlertIcon />
+              <VStack align="start" spacing={1}>
+                <Text fontWeight="bold" fontSize="sm">Ready to Generate</Text>
+                <Text fontSize="sm">
+                  Your program will be generated based on the Week 1 template with progression rules applied to create {programOverview.Program_Length_in_Weeks || 0} weeks of training.
+                </Text>
+              </VStack>
+            </Alert>
+  
+            {/* Generation Options */}
+            <Box>
+              <Text fontWeight="bold" mb={3}>Generation Options</Text>
+              <VStack spacing={3} align="stretch">
+                <HStack>
+                  <Switch
+                    isChecked={generatedProgram.includeDeloads !== false}
+                    onChange={(e) =>
+                      setGeneratedProgram(prev => ({
+                        ...prev,
+                        includeDeloads: e.target.checked,
+                      }))
+                    }
+                    colorScheme="teal"
+                  />
+                  <Text fontSize="sm">Include scheduled deload weeks</Text>
+                </HStack>
+  
+                <HStack>
+                  <Switch
+                    isChecked={generatedProgram.autoAdjustRPE !== false}
+                    onChange={(e) =>
+                      setGeneratedProgram(prev => ({
+                        ...prev,
+                        autoAdjustRPE: e.target.checked,
+                      }))
+                    }
+                    colorScheme="teal"
+                  />
+                  <Text fontSize="sm">Auto-adjust RPE based on progression</Text>
+                </HStack>
+  
+                <HStack>
+                  <Switch
+                    isChecked={generatedProgram.includeNotes !== false}
+                    onChange={(e) =>
+                      setGeneratedProgram(prev => ({
+                        ...prev,
+                        includeNotes: e.target.checked,
+                      }))
+                    }
+                    colorScheme="teal"
+                  />
+                  <Text fontSize="sm">Include progression notes for each week</Text>
+                </HStack>
               </VStack>
             </Box>
+  
+            {/* Generate Button */}
+            <HStack justify="center" pt={4}>
+              <Button
+                colorScheme="teal"
+                size="lg"
+                leftIcon={<CheckIcon />}
+                onClick={handleGenerateProgram}
+                isLoading={loading}
+                loadingText="Generating..."
+                isDisabled={getTotalExercisesInTemplate() === 0}
+              >
+                Generate Complete Program
+              </Button>
+            </HStack>
+  
+            {getTotalExercisesInTemplate() === 0 && (
+              <Text fontSize="sm" color="red.500" textAlign="center">
+                Please add exercises to your Week 1 template before generating the program
+              </Text>
+            )}
+          </VStack>
+        </CardBody>
+      </Card>
+  
+      {/* Generated Program Preview */}
+      {Object.keys(generatedProgram).length > 0 && (
+        <Card>
+          <CardHeader>
+            <HStack justify="space-between">
+              <Heading size="sm" color="green.500">Generated Program Preview</Heading>
+              <Badge colorScheme="green">Generated Successfully</Badge>
+            </HStack>
+          </CardHeader>
+          <CardBody>
+            <VStack spacing={4} align="stretch">
+              <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+                <Stat>
+                  <StatLabel>Total Weeks</StatLabel>
+                  <StatNumber>{Object.keys(generatedProgram.weeks || {}).length}</StatNumber>
+                </Stat>
+                <Stat>
+                  <StatLabel>Total Sessions</StatLabel>
+                  <StatNumber>{getTotalSessionsGenerated()}</StatNumber>
+                </Stat>
+                <Stat>
+                  <StatLabel>Total Exercises</StatLabel>
+                  <StatNumber>{getTotalExercisesGenerated()}</StatNumber>
+                </Stat>
+                <Stat>
+                  <StatLabel>Deload Weeks</StatLabel>
+                  <StatNumber>{getDeloadWeeksCount()}</StatNumber>
+                </Stat>
+              </SimpleGrid>
+  
+              <Divider />
+  
+              <Box>
+                <Text fontWeight="bold" mb={2}>Week-by-Week Overview</Text>
+                <SimpleGrid columns={{ base: 2, md: 4, lg: 6 }} spacing={2}>
+                  {Object.keys(generatedProgram.weeks || {}).map(weekNum => (
+                    <Box
+                      key={weekNum}
+                      p={2}
+                      bg={isDeloadWeek(weekNum) ? "orange.100" : "teal.50"}
+                      borderRadius="md"
+                      textAlign="center"
+                    >
+                      <Text fontWeight="bold" fontSize="sm">
+                        Week {weekNum}
+                      </Text>
+                      <Text fontSize="xs" color="gray.600">
+                        {isDeloadWeek(weekNum) ? "Deload" : "Training"}
+                      </Text>
+                    </Box>
+                  ))}
+                </SimpleGrid>
+              </Box>
+            </VStack>
+          </CardBody>
+        </Card>
+      )}
+    </VStack>
+  );
+
+  const renderStep6FineTune = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Heading size="md" mb={4} color="teal.600">
+          Fine-tune & Finalize Program
+        </Heading>
+        <Text color="gray.600" mb={6}>
+          Review and make final adjustments to your generated program before saving it to your library.
+        </Text>
+      </Box>
+  
+      {/* Program Status */}
+      <Card>
+        <CardHeader>
+          <HStack justify="space-between">
+            <Heading size="sm" color="teal.500">Program Status</Heading>
+            <Badge 
+              colorScheme={Object.keys(generatedProgram).length > 0 ? "green" : "yellow"}
+              size="lg"
+            >
+              {Object.keys(generatedProgram).length > 0 ? "Ready to Save" : "Generate First"}
+            </Badge>
+          </HStack>
+        </CardHeader>
+        <CardBody>
+          {Object.keys(generatedProgram).length > 0 ? (
+            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+              <Stat>
+                <StatLabel>Program Name</StatLabel>
+                <StatNumber fontSize="md">{programOverview.Program_Name}</StatNumber>
+                <StatHelpText>Ready for final review</StatHelpText>
+              </Stat>
+              <Stat>
+                <StatLabel>Total Duration</StatLabel>
+                <StatNumber>{Object.keys(generatedProgram.weeks || {}).length} weeks</StatNumber>
+                <StatHelpText>Including deload weeks</StatHelpText>
+              </Stat>
+              <Stat>
+                <StatLabel>Modifications</StatLabel>
+                <StatNumber>{Object.keys(fineTuning.modifiedWeeks || {}).length}</StatNumber>
+                <StatHelpText>Custom adjustments made</StatHelpText>
+              </Stat>
+            </SimpleGrid>
+          ) : (
+            <Alert status="warning">
+              <AlertIcon />
+              <Text>Please generate your program in Step 5 before proceeding to fine-tuning.</Text>
+            </Alert>
           )}
-      </VStack>
-    );
-  };
+        </CardBody>
+      </Card>
+  
+      {/* Fine-tuning Options */}
+      {Object.keys(generatedProgram).length > 0 && (
+        <>
+          {/* Week Selection for Modification */}
+          <Card>
+            <CardHeader>
+              <Heading size="sm" color="teal.500">Select Week to Modify</Heading>
+            </CardHeader>
+            <CardBody>
+              <VStack spacing={4} align="stretch">
+                <Text fontSize="sm" color="gray.600">
+                  Choose a week to make custom modifications to exercises, sets, reps, or weights.
+                </Text>
+                
+                <SimpleGrid columns={{ base: 3, md: 6, lg: 8 }} spacing={2}>
+                  {Object.keys(generatedProgram.weeks || {}).map(weekNum => (
+                    <Button
+                      key={weekNum}
+                      size="sm"
+                      variant={fineTuning.selectedWeek === weekNum ? "solid" : "outline"}
+                      colorScheme={isDeloadWeek(weekNum) ? "orange" : "teal"}
+                      onClick={() => setFineTuning(prev => ({
+                        ...prev,
+                        selectedWeek: weekNum,
+                      }))}
+                    >
+                      Week {weekNum}
+                      {isDeloadWeek(weekNum) && (
+                        <Text fontSize="xs" ml={1}>(D)</Text>
+                      )}
+                    </Button>
+                  ))}
+                </SimpleGrid>
+              </VStack>
+            </CardBody>
+          </Card>
+  
+          {/* Week Modification Interface */}
+          {fineTuning.selectedWeek && (
+            <Card>
+              <CardHeader>
+                <HStack justify="space-between">
+                  <Heading size="sm" color="teal.500">
+                    Modify Week {fineTuning.selectedWeek}
+                  </Heading>
+                  <HStack>
+                    {isDeloadWeek(fineTuning.selectedWeek) && (
+                      <Badge colorScheme="orange">Deload Week</Badge>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => resetWeekModifications(fineTuning.selectedWeek)}
+                    >
+                      Reset Week
+                    </Button>
+                  </HStack>
+                </HStack>
+              </CardHeader>
+              <CardBody>
+                <Tabs variant="enclosed" size="sm">
+                  <TabList>
+                    {Array.from({ length: trainingStructure.daysPerWeek || 3 }, (_, index) => (
+                      <Tab key={index}>
+                        Day {index + 1}
+                      </Tab>
+                    ))}
+                  </TabList>
+  
+                  <TabPanels>
+                    {Array.from({ length: trainingStructure.daysPerWeek || 3 }, (_, dayIndex) => (
+                      <TabPanel key={dayIndex}>
+                        <VStack spacing={3} align="stretch">
+                          <Text fontWeight="bold" fontSize="sm">
+                            Day {dayIndex + 1} - Week {fineTuning.selectedWeek}
+                          </Text>
+                          
+                          {getExercisesForWeekDay(fineTuning.selectedWeek, dayIndex + 1).map((exercise, exerciseIndex) => (
+                            <Card key={exerciseIndex} variant="outline" size="sm">
+                              <CardBody>
+                                <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={3}>
+                                  <FormControl>
+                                    <FormLabel fontSize="xs">Exercise</FormLabel>
+                                    <Text fontSize="sm" fontWeight="medium">
+                                      {exercise.exercise}
+                                    </Text>
+                                  </FormControl>
+  
+                                  <FormControl>
+                                    <FormLabel fontSize="xs">Sets</FormLabel>
+                                    <NumberInput
+                                      value={getModifiedValue(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'target_sets') || exercise.target_sets}
+                                      onChange={(valueString, valueNumber) =>
+                                        updateWeekModification(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'target_sets', valueNumber)
+                                      }
+                                      min={1}
+                                      max={10}
+                                      size="sm"
+                                    >
+                                      <NumberInputField />
+                                      <NumberInputStepper>
+                                        <NumberIncrementStepper />
+                                        <NumberDecrementStepper />
+                                      </NumberInputStepper>
+                                    </NumberInput>
+                                  </FormControl>
+  
+                                  <FormControl>
+                                    <FormLabel fontSize="xs">Reps</FormLabel>
+                                    <Input
+                                      value={getModifiedValue(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'target_reps') || exercise.target_reps}
+                                      onChange={(e) =>
+                                        updateWeekModification(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'target_reps', e.target.value)
+                                      }
+                                      size="sm"
+                                    />
+                                  </FormControl>
+  
+                                  <FormControl>
+                                    <FormLabel fontSize="xs">Weight (kg)</FormLabel>
+                                    <NumberInput
+                                      value={getModifiedValue(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'target_weight_kg') || exercise.target_weight_kg || ''}
+                                      onChange={(valueString, valueNumber) =>
+                                        updateWeekModification(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'target_weight_kg', valueNumber)
+                                      }
+                                      min={0}
+                                      step={2.5}
+                                      size="sm"
+                                    >
+                                      <NumberInputField />
+                                      <NumberInputStepper>
+                                        <NumberIncrementStepper />
+                                        <NumberDecrementStepper />
+                                      </NumberInputStepper>
+                                    </NumberInput>
+                                  </FormControl>
+                                </SimpleGrid>
+  
+                                {/* Exercise Notes */}
+                                <FormControl mt={3}>
+                                  <FormLabel fontSize="xs">Custom Notes for This Week</FormLabel>
+                                  <Textarea
+                                    value={getModifiedValue(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'week_note') || ''}
+                                    onChange={(e) =>
+                                      updateWeekModification(fineTuning.selectedWeek, dayIndex + 1, exerciseIndex, 'week_note', e.target.value)
+                                    }
+                                    placeholder="Add specific notes for this week..."
+                                    size="sm"
+                                    rows={2}
+                                  />
+                                </FormControl>
+                              </CardBody>
+                            </Card>
+                          ))}
+                        </VStack>
+                      </TabPanel>
+                    ))}
+                  </TabPanels>
+                </Tabs>
+              </CardBody>
+            </Card>
+          )}
+  
+          {/* Final Program Actions */}
+          <Card>
+            <CardHeader>
+              <Heading size="sm" color="teal.500">Save Program</Heading>
+            </CardHeader>
+            <CardBody>
+              <VStack spacing={4} align="stretch">
+                <Text fontSize="sm" color="gray.600">
+                  Your program is ready to be saved to your library. You can make further modifications after saving.
+                </Text>
+  
+                <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                  <FormControl>
+                    <FormLabel>Final Program Name</FormLabel>
+                    <Input
+                      value={programOverview.Program_Name}
+                      onChange={(e) =>
+                        setProgramOverview(prev => ({
+                          ...prev,
+                          Program_Name: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter final program name"
+                    />
+                  </FormControl>
+  
+                  <FormControl>
+                    <FormLabel>Program Tags</FormLabel>
+                    <Input
+                      value={fineTuning.programTags || ''}
+                      onChange={(e) =>
+                        setFineTuning(prev => ({
+                          ...prev,
+                          programTags: e.target.value,
+                        }))
+                      }
+                      placeholder="strength, hypertrophy, beginner"
+                    />
+                  </FormControl>
+                </SimpleGrid>
+  
+                <FormControl>
+                  <FormLabel>Final Program Notes</FormLabel>
+                  <Textarea
+                    value={fineTuning.finalNotes || ''}
+                    onChange={(e) =>
+                      setFineTuning(prev => ({
+                        ...prev,
+                        finalNotes: e.target.value,
+                      }))
+                    }
+                    placeholder="Add any final notes about this program..."
+                    rows={3}
+                  />
+                </FormControl>
+  
+                <HStack justify="center" pt={4} spacing={4}>
+                  <Button
+                    variant="outline"
+                    leftIcon={<DownloadIcon />}
+                    onClick={handleExportProgram}
+                  >
+                    Export Program
+                  </Button>
+                  <Button
+                    colorScheme="teal"
+                    size="lg"
+                    leftIcon={<CheckIcon />}
+                    onClick={handleSaveProgram}
+                    isLoading={loading}
+                    loadingText="Saving..."
+                  >
+                    Save to Library
+                  </Button>
+                </HStack>
+              </VStack>
+            </CardBody>
+          </Card>
+        </>
+      )}
+    </VStack>
+  );
 
   // Program Creation Wizard Component
   const ProgramCreationWizard = () => {
@@ -3204,7 +3812,7 @@ function WorkoutPrograms() {
             programOverview.Program_Name &&
             programOverview.Level &&
             programOverview.Focus &&
-            programOverview.Program_Length_in_Weeks
+            typeof programOverview.Program_Length_in_Weeks === 'number'
           );
         case 1:
           return trainingStructure.type;
@@ -3223,8 +3831,8 @@ function WorkoutPrograms() {
 
     return (
       <Box>
-        <Stepper index={activeStep} mb={8} colorScheme="teal">
-          {steps.map((step, index) => (
+        <Stepper index={activeStep} mb={8} colorScheme="teal" >
+                 {steps.map((step, index) => (
             <Step key={index}>
               <StepIndicator>
                 <StepStatus
@@ -4234,14 +4842,16 @@ function WorkoutPrograms() {
       )}
 
       {/* Program Creation Modal */}
-      <Modal
+      <Modal 
+      data-focus-lock-disabled="true"
         isOpen={isProgramModalOpen}
+        trapFocus={false}
         onClose={onProgramModalClose}
         size="6xl"
         closeOnOverlayClick={false}
       >
         <ModalOverlay />
-        <ModalContent maxH="90vh" overflowY="auto">
+        <ModalContent /*trapFocus={false} data-focus-lock-disabled="true"*/ maxH="90vh" overflowY="auto">
           <ModalHeader>
             {editingProgram ? "Edit Program" : "Create New Program"}
           </ModalHeader>
