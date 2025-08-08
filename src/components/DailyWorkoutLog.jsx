@@ -147,7 +147,7 @@ function DailyWorkoutLog({
         return {
           exercise: ex.exercise,
           superset: ex.superset || "",
-          load_prescription: ex.load_prescription_p1RM || "",
+          load_prescription: ex.load_prescription_p1rm || "",
           calculated_target_load: targetWeight,
           target_reps: ex.target_reps || "",
           rest: ex.target_rest || "",
@@ -178,7 +178,7 @@ function DailyWorkoutLog({
           exercise: ex.Exercise,
           superset: programData[ex.Exercise]?.superset || "",
           load_prescription:
-            programData[ex.Exercise]?.["load_prescription_p1RM"] || "",
+            programData[ex.Exercise]?.["load_prescription_p1rm"] || "",
           calculated_target_load: targetWeight,
           target_reps: programData[ex.Exercise]?.target_reps || "",
           rest: programData[ex.Exercise]?.target_rest || "",
@@ -261,7 +261,7 @@ function DailyWorkoutLog({
           const { data: progData, error: progError } = await supabase
             .from("program_library")
             .select(
-              "program_name, program_macro_cycle, week, day, focus, exercise, superset, target_sets, target_reps, load_prescription_p1RM, target_weight_kg, target_rpe, target_rest, target_tempo, target_time_distance"
+              "program_name, program_macro_cycle, week, day, focus, exercise, superset, target_sets, target_reps, load_prescription_p1rm, target_weight_kg, target_rpe, target_rest, target_tempo, target_time_distance"
             )
             .eq("program_id", programId); // Filter by selected program ID
 
@@ -391,7 +391,7 @@ function DailyWorkoutLog({
         exercise: exercise.Exercise,
         superset: programData[exercise.Exercise]?.superset || "",
         load_prescription:
-          programData[exercise.Exercise]?.["load_prescription_p1RM"] || "",
+          programData[exercise.Exercise]?.["load_prescription_p1rm"] || "",
         calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
         target_reps: programData[exercise.Exercise]?.target_reps || "",
         rest: programData[exercise.Exercise]?.target_rest || "",
@@ -431,7 +431,7 @@ function DailyWorkoutLog({
         exercise: newExercise.Exercise,
         superset: programData[newExercise.Exercise]?.superset || "",
         load_prescription:
-          programData[newExercise.Exercise]?.["load_prescription_p1RM"] || "",
+          programData[newExercise.Exercise]?.["load_prescription_p1rm"] || "",
         calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
         target_reps: programData[newExercise.Exercise]?.target_reps || "",
         rest: programData[newExercise.Exercise]?.target_rest || "",

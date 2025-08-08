@@ -522,7 +522,7 @@ function Dashboard() {
           const { data: workoutData, error: workoutError } = await supabase
             .from("program_library")
             .select(
-              "week, day, focus, exercise, target_sets, target_reps, load_prescription_p1RM, target_weight_kg, target_rpe, target_rest, target_tempo, target_time_distance"
+              "week, day, focus, exercise, target_sets, target_reps, load_prescription_p1rm, target_weight_kg, target_rpe, target_rest, target_tempo, target_time_distance"
             )
             .eq("program_id", enrollmentData.program_id)
             .eq("week", nextWeek)
