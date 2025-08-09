@@ -1,5 +1,4 @@
-import { WORKOUT_FOCUS_OPTIONS, getFocusType } from "../constants/workoutFocus";
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Box,
   Heading,
@@ -7,23 +6,31 @@ import {
   Input,
   Button,
   Flex,
-  Table,
-  Tbody,
-  Tr,
-  Td,
+  VStack,
+  HStack,
   Spinner,
   Alert,
   AlertIcon,
   Checkbox,
-  Textarea,
-  List,
-  ListItem,
+  IconButton,
+  Grid,
+  Badge,
+  Collapse,
+  useDisclosure,
+  Card,
+  CardBody,
+  Progress,
+  Divider,
   Select,
-  VStack,
-  HStack,
   FormControl,
   FormLabel,
-  useBreakpointValue,
+  useToast,
+  Container,
+  SimpleGrid,
+  Stat,
+  StatLabel,
+  StatNumber,
+  StatHelpText,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -31,14 +38,42 @@ import {
   ModalFooter,
   ModalBody,
   ModalCloseButton,
-  IconButton,
-  Grid,
+  Textarea,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  useBreakpointValue,
   Link,
+  List,
+  ListItem,
+  Switch,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  CircularProgress,
+  CircularProgressLabel,
 } from "@chakra-ui/react";
-import { DeleteIcon, EditIcon } from "@chakra-ui/icons";
+import {
+  ArrowBackIcon,
+  ChevronDownIcon,
+  ChevronUpIcon,
+  AddIcon,
+  DeleteIcon,
+  EditIcon,
+  CheckIcon,
+  TimeIcon,
+  InfoIcon,
+  SettingsIcon,
+  SearchIcon,
+  StarIcon,
+  CloseIcon,
+} from "@chakra-ui/icons";
 import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "../services/supabaseClient";
-import { ArrowBackIcon } from "@chakra-ui/icons";
 import {
   LineChart,
   Line,
@@ -49,8 +84,750 @@ import {
   Legend,
   ResponsiveContainer,
   ReferenceLine,
+  BarChart,
+  Bar,
 } from "recharts";
 
+// Custom Input Component for Quick Set Entry
+const QuickSetInput = ({ 
+  value, 
+  onChange, 
+  placeholder, 
+  type = "text", 
+  isCompleted = false,
+  bg = null 
+}) => (
+  <Input
+    value={value}
+    onChange={onChange}
+    placeholder={placeholder}
+    type={type}
+    inputMode={type === "number" ? "decimal" : "text"}
+    size={{ base: "md", md: "lg" }}
+    textAlign="center"
+    fontWeight="bold"
+    fontSize={{ base: "md", md: "lg" }}
+    bg={bg || (isCompleted ? "green.50" : "white")}
+    borderColor={isCompleted ? "green.300" : "gray.200"}
+    borderWidth="2px"
+    _focus={{
+      borderColor: "teal.400",
+      boxShadow: "0 0 0 3px rgba(56, 178, 172, 0.1)",
+    }}
+    _hover={{
+      borderColor: "teal.300",
+    }}
+  />
+);
+
+// Set Completion Button Component
+const SetCompletionButton = ({ isCompleted, onClick, setNumber }) => (
+  <IconButton
+    icon={isCompleted ? <CheckIcon /> : <Box w="4" h="4" />}
+    colorScheme={isCompleted ? "green" : "gray"}
+    variant={isCompleted ? "solid" : "outline"}
+    size={{ base: "md", md: "lg" }}
+    borderRadius="full"
+    onClick={onClick}
+    aria-label={`Mark set ${setNumber} as ${isCompleted ? 'incomplete' : 'complete'}`}
+    _hover={{
+      transform: "scale(1.05)",
+    }}
+    transition="all 0.2s"
+  />
+);
+
+// Timer Display Component
+const TimerDisplay = ({ seconds, isActive, onStart, onStop }) => {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  
+  return (
+    <HStack spacing={2}>
+      <Box
+        bg={isActive ? "orange.100" : "gray.100"}
+        px={3}
+        py={1}
+        borderRadius="md"
+        minW="60px"
+        textAlign="center"
+      >
+        <Text fontSize="sm" fontWeight="bold" color={isActive ? "orange.600" : "gray.600"}>
+          {minutes}:{remainingSeconds.toString().padStart(2, "0")}
+        </Text>
+      </Box>
+      <IconButton
+        icon={<TimeIcon />}
+        size="sm"
+        colorScheme={isActive ? "orange" : "gray"}
+        variant={isActive ? "solid" : "outline"}
+        onClick={isActive ? onStop : onStart}
+        aria-label={isActive ? "Stop timer" : "Start timer"}
+      />
+    </HStack>
+  );
+};
+
+// Exercise Search Modal Component
+const ExerciseSearchModal = ({ 
+  isOpen, 
+  onClose, 
+  exerciseLibrary, 
+  onSelectExercise, 
+  searchTerm, 
+  setSearchTerm,
+  title = "Select Exercise"
+}) => {
+  const filteredExercises = searchTerm
+    ? exerciseLibrary
+        .filter((ex) => {
+          const searchTerms = searchTerm.toLowerCase().split(" ");
+          const searchableFields = [
+            ex.Exercise?.toLowerCase() || "",
+            ex.Target_Muscle_Group?.toLowerCase() || "",
+            ex.Primary_Equipment?.toLowerCase() || "",
+            ex.Mechanics?.toLowerCase() || "",
+            ex.Force_Type?.toLowerCase() || "",
+            ex.Favorite?.toString().toLowerCase() || "",
+          ].join(" ");
+
+          return searchTerms.every((term) => searchableFields.includes(term));
+        })
+        .sort((a, b) => {
+          const isFavorite = (exercise) => {
+            const favoriteValue = exercise.Favorite?.toString().toLowerCase();
+            return favoriteValue === "yes" || favoriteValue === "y";
+          };
+
+          const aIsFavorite = isFavorite(a);
+          const bIsFavorite = isFavorite(b);
+
+          if (aIsFavorite === bIsFavorite) {
+            return (a.Exercise || "").localeCompare(b.Exercise || "");
+          }
+          return aIsFavorite ? -1 : 1;
+        })
+    : exerciseLibrary.sort((a, b) => {
+        const isFavorite = (exercise) => {
+          const favoriteValue = exercise.Favorite?.toString().toLowerCase();
+          return favoriteValue === "yes" || favoriteValue === "y";
+        };
+
+        const aIsFavorite = isFavorite(a);
+        const bIsFavorite = isFavorite(b);
+
+        if (aIsFavorite === bIsFavorite) {
+          return (a.Exercise || "").localeCompare(b.Exercise || "");
+        }
+        return aIsFavorite ? -1 : 1;
+      });
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="xl" scrollBehavior="inside">
+      <ModalOverlay />
+      <ModalContent maxH="80vh">
+        <ModalHeader>
+          <HStack>
+            <SearchIcon />
+            <Text>{title}</Text>
+          </HStack>
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody>
+          <VStack spacing={4} align="stretch">
+            <Input
+              placeholder="Search exercises..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              size="lg"
+              leftIcon={<SearchIcon />}
+            />
+            
+            <Box maxH="400px" overflowY="auto">
+              <List spacing={2}>
+                {filteredExercises.slice(0, 50).map((exercise, index) => {
+                  const isFavorite = exercise.Favorite?.toString().toLowerCase() === "yes" || 
+                                   exercise.Favorite?.toString().toLowerCase() === "y";
+                  
+                  return (
+                    <ListItem key={index}>
+                      <Box
+                        p={3}
+                        border="1px solid"
+                        borderColor="gray.200"
+                        borderRadius="md"
+                        cursor="pointer"
+                        _hover={{ bg: "teal.50", borderColor: "teal.300" }}
+                        onClick={() => {
+                          onSelectExercise(exercise.Exercise);
+                          onClose();
+                        }}
+                      >
+                        <HStack justify="space-between">
+                          <VStack align="start" spacing={1}>
+                            <HStack>
+                              <Text fontWeight="bold">{exercise.Exercise}</Text>
+                              {isFavorite && <StarIcon color="yellow.400" boxSize={4} />}
+                            </HStack>
+                            <Text fontSize="sm" color="gray.600">
+                              {exercise.Target_Muscle_Group}
+                            </Text>
+                            {exercise.Primary_Equipment && (
+                              <Badge size="sm" colorScheme="blue">
+                                {exercise.Primary_Equipment}
+                              </Badge>
+                            )}
+                          </VStack>
+                        </HStack>
+                      </Box>
+                    </ListItem>
+                  );
+                })}
+              </List>
+              
+              {filteredExercises.length === 0 && searchTerm && (
+                <Text textAlign="center" color="gray.500" py={8}>
+                  No exercises found matching "{searchTerm}"
+                </Text>
+              )}
+              
+              {filteredExercises.length > 50 && (
+                <Text textAlign="center" color="gray.500" py={4} fontSize="sm">
+                  Showing first 50 results. Use search to narrow down.
+                </Text>
+              )}
+            </Box>
+          </VStack>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
+};
+
+// Exercise Statistics Component
+const ExerciseStats = ({ prData, exerciseDetails }) => {
+  if (!prData || prData.length === 0) {
+    return (
+      <Box textAlign="center" py={8}>
+        <Text color="gray.500">No workout history available</Text>
+      </Box>
+    );
+  }
+
+  const latestData = prData[prData.length - 1];
+  const maxWeight = Math.max(...prData.map(d => d.maxWeight));
+  const maxVolume = Math.max(...prData.map(d => d.totalVolume));
+  const bestVolumeDay = prData.find(d => d.totalVolume === maxVolume);
+
+  return (
+    <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
+      <Stat bg="teal.50" p={4} borderRadius="lg" textAlign="center">
+        <StatLabel fontSize="xs" color="teal.600">Current 1RM Est.</StatLabel>
+        <StatNumber fontSize="xl" color="teal.700">
+          {latestData.estimated1RM}kg
+        </StatNumber>
+      </Stat>
+      
+      <Stat bg="blue.50" p={4} borderRadius="lg" textAlign="center">
+        <StatLabel fontSize="xs" color="blue.600">Max Weight</StatLabel>
+        <StatNumber fontSize="xl" color="blue.700">
+          {maxWeight}kg
+        </StatNumber>
+      </Stat>
+      
+      <Stat bg="purple.50" p={4} borderRadius="lg" textAlign="center">
+        <StatLabel fontSize="xs" color="purple.600">Best Volume</StatLabel>
+        <StatNumber fontSize="xl" color="purple.700">
+          {Math.round(maxVolume)}
+        </StatNumber>
+        {bestVolumeDay && (
+          <StatHelpText fontSize="xs">
+            {new Date(bestVolumeDay.date).toLocaleDateString()}
+          </StatHelpText>
+        )}
+      </Stat>
+      
+      <Stat bg="orange.50" p={4} borderRadius="lg" textAlign="center">
+        <StatLabel fontSize="xs" color="orange.600">Alex's 1RM</StatLabel>
+        <StatNumber fontSize="xl" color="orange.700">
+          {exerciseDetails?.oneRmAlex || "N/A"}
+        </StatNumber>
+      </Stat>
+    </SimpleGrid>
+  );
+};
+
+// Exercise Card Component with full functionality
+const ExerciseCard = ({ 
+  exercise, 
+  exerciseIndex, 
+  previousData, 
+  onInputChange, 
+  onSetCompletion, 
+  onAddSet, 
+  onDeleteSet, 
+  onDeleteExercise,
+  onOpenDetails,
+  onChangeExercise,
+  activeTimer,
+  timerSeconds,
+  onStartTimer,
+  onStopTimer,
+  onSupersetChange
+}) => {
+  const { isOpen: isDetailsOpen, onToggle: toggleDetails } = useDisclosure();
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  
+  const completedSets = exercise.sets.filter(set => set.completed).length;
+  const totalSets = exercise.sets.length;
+  const progressPercentage = totalSets > 0 ? (completedSets / totalSets) * 100 : 0;
+
+  const getPerformanceStatus = (weight, reps) => {
+    const last = previousData[exercise.exercise];
+    if (!last || !weight || !reps) return { color: "gray.100", message: "" };
+
+    const lastWeight = parseFloat(last.weight_kg) || 0;
+    const lastReps = parseInt(last.reps) || 0;
+    const currentW = parseFloat(weight) || 0;
+    const currentR = parseInt(reps) || 0;
+
+    if (currentW > lastWeight || (currentW === lastWeight && currentR > lastReps)) {
+      return { color: "green.100", message: "PR!" };
+    } else if (currentW < lastWeight || (currentW === lastWeight && currentR < lastReps)) {
+      return { color: "red.100", message: "Below" };
+    }
+    return { color: "yellow.100", message: "Match" };
+  };
+
+  return (
+    <Card mb={4} shadow="md" borderRadius="xl" overflow="hidden">
+      <CardBody p={0}>
+        {/* Exercise Header */}
+        <Box bg="gray.50" px={4} py={3}>
+          <Flex justify="space-between" align="center">
+            <VStack align="start" spacing={1} flex={1}>
+              <HStack>
+                <Heading 
+                  size={{ base: "sm", md: "md" }}
+                  color="gray.800"
+                  cursor="pointer"
+                  onClick={() => onOpenDetails && onOpenDetails(exerciseIndex)}
+                  _hover={{ color: "teal.600" }}
+                >
+                  {exercise.exercise}
+                </Heading>
+                <Badge colorScheme="teal" fontSize="xs">
+                  {completedSets}/{totalSets}
+                </Badge>
+              </HStack>
+              
+              {previousData[exercise.exercise] && (
+                <Text fontSize="xs" color="gray.600">
+                  Last: {previousData[exercise.exercise].weight_kg}kg × {previousData[exercise.exercise].reps}
+                  {previousData[exercise.exercise].rpe && ` @ RPE ${previousData[exercise.exercise].rpe}`}
+                </Text>
+              )}
+              
+              <Progress 
+                value={progressPercentage} 
+                colorScheme="teal" 
+                size="sm" 
+                borderRadius="full"
+                bg="gray.200"
+                w="full"
+              />
+            </VStack>
+
+            <VStack spacing={1}>
+              <HStack spacing={1}>
+                <IconButton
+                  icon={<EditIcon />}
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="blue"
+                  onClick={() => onChangeExercise && onChangeExercise(exerciseIndex)}
+                  aria-label="Change exercise"
+                  title="Change Exercise"
+                />
+                <IconButton
+                  icon={isDetailsOpen ? <ChevronUpIcon /> : <SettingsIcon />}
+                  size="sm"
+                  variant="ghost"
+                  onClick={toggleDetails}
+                  aria-label="Toggle exercise details"
+                  title="Exercise Settings"
+                />
+                <IconButton
+                  icon={<DeleteIcon />}
+                  size="sm"
+                  variant="ghost"
+                  colorScheme="red"
+                  onClick={() => onDeleteExercise(exerciseIndex)}
+                  aria-label="Delete exercise"
+                  title="Delete Exercise"
+                />
+              </HStack>
+            </VStack>
+          </Flex>
+        </Box>
+
+        {/* Exercise Details - Collapsible */}
+        <Collapse in={isDetailsOpen}>
+          <Box px={4} py={3} bg="blue.50" borderTop="1px" borderColor="blue.100">
+            <Text fontSize="sm" fontWeight="semibold" mb={2} color="blue.800">
+              Exercise Details
+            </Text>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={2}>
+              <FormControl size="sm">
+                <FormLabel fontSize="xs" color="gray.600">Superset</FormLabel>
+                <Select
+                  value={exercise.superset || ""}
+                  onChange={(e) => onSupersetChange ? onSupersetChange(exerciseIndex, e.target.value) : onInputChange(exerciseIndex, -1, "superset", e.target.value)}
+                  size="sm"
+                  bg="white"
+                >
+                  <option value="">None</option>
+                  <option value="Y">Y</option>
+                  <option value="N">N</option>
+                </Select>
+              </FormControl>
+              
+              <FormControl size="sm">
+                <FormLabel fontSize="xs" color="gray.600">%1RM</FormLabel>
+                <Input
+                  value={exercise.load_prescription || ""}
+                  onChange={(e) => onInputChange(exerciseIndex, -1, "load_prescription", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              
+              <FormControl size="sm">
+                <FormLabel fontSize="xs" color="gray.600">Target Load</FormLabel>
+                <Input
+                  value={exercise.calculated_target_load || ""}
+                  onChange={(e) => onInputChange(exerciseIndex, -1, "calculated_target_load", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              
+              <FormControl size="sm">
+                <FormLabel fontSize="xs" color="gray.600">Target Reps</FormLabel>
+                <Input
+                  value={exercise.target_reps || ""}
+                  onChange={(e) => onInputChange(exerciseIndex, -1, "target_reps", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              
+              <FormControl size="sm">
+                <FormLabel fontSize="xs" color="gray.600">Rest (sec)</FormLabel>
+                <Input
+                  value={exercise.rest || ""}
+                  onChange={(e) => onInputChange(exerciseIndex, -1, "rest", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              
+              <FormControl size="sm">
+                <FormLabel fontSize="xs" color="gray.600">Tempo</FormLabel>
+                <Input
+                  value={exercise.tempo || ""}
+                  onChange={(e) => onInputChange(exerciseIndex, -1, "tempo", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              
+              <FormControl size="sm" gridColumn={{ base: "span 1", md: "span 2" }}>
+                <FormLabel fontSize="xs" color="gray.600">Time/Distance</FormLabel>
+                <Input
+                  value={exercise.time_distance || ""}
+                  onChange={(e) => onInputChange(exerciseIndex, -1, "time_distance", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+            </SimpleGrid>
+          </Box>
+        </Collapse>
+
+        {/* Sets */}
+        <Box px={4} py={3}>
+          <VStack spacing={3}>
+            {exercise.sets.map((set, setIndex) => {
+              const performance = getPerformanceStatus(set.weight, set.reps);
+              const isTimerActive = activeTimer?.exerciseIndex === exerciseIndex && 
+                                   activeTimer?.setIndex === setIndex;
+              
+              return (
+                <Box 
+                  key={setIndex} 
+                  w="full" 
+                  p={3} 
+                  bg={performance.color}
+                  borderRadius="lg"
+                  border="2px"
+                  borderColor={set.completed ? "green.300" : "gray.200"}
+                  position="relative"
+                >
+                  {/* Mobile Layout */}
+                  {isMobile ? (
+                    <VStack spacing={3}>
+                      {/* Set Header */}
+                      <Flex justify="space-between" align="center" w="full">
+                        <HStack>
+                          <Text fontWeight="bold" fontSize="lg" color="gray.700">
+                            Set {setIndex + 1}
+                          </Text>
+                          {performance.message && (
+                            <Badge 
+                              colorScheme={performance.message === "PR!" ? "green" : 
+                                         performance.message === "Below" ? "red" : "yellow"}
+                              fontSize="xs"
+                            >
+                              {performance.message}
+                            </Badge>
+                          )}
+                        </HStack>
+                        
+                        <HStack spacing={2}>
+                          {isTimerActive && (
+                            <TimerDisplay
+                              seconds={timerSeconds}
+                              isActive={isTimerActive}
+                              onStart={() => onStartTimer(exerciseIndex, setIndex)}
+                              onStop={onStopTimer}
+                            />
+                          )}
+                          
+                          {exercise.sets.length > 1 && (
+                            <IconButton
+                              icon={<DeleteIcon />}
+                              size="sm"
+                              variant="ghost"
+                              colorScheme="red"
+                              onClick={() => onDeleteSet(exerciseIndex, setIndex)}
+                              aria-label="Delete set"
+                            />
+                          )}
+                        </HStack>
+                      </Flex>
+
+                      {/* Set Inputs - Mobile Grid */}
+                      <SimpleGrid columns={2} spacing={3} w="full">
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            Weight (kg)
+                          </Text>
+                          <QuickSetInput
+                            value={set.weight || ""}
+                            onChange={(e) => onInputChange(exerciseIndex, setIndex, "weight", e.target.value)}
+                            placeholder="0"
+                            type="text"
+                            isCompleted={set.completed}
+                            bg={performance.color}
+                          />
+                        </VStack>
+
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            Reps
+                          </Text>
+                          <QuickSetInput
+                            value={set.reps || ""}
+                            onChange={(e) => onInputChange(exerciseIndex, setIndex, "reps", e.target.value)}
+                            placeholder="0"
+                            type="text"
+                            isCompleted={set.completed}
+                            bg={performance.color}
+                          />
+                        </VStack>
+
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            RPE
+                          </Text>
+                          <QuickSetInput
+                            value={set.rpe || ""}
+                            onChange={(e) => onInputChange(exerciseIndex, setIndex, "rpe", e.target.value)}
+                            placeholder="7"
+                            type="text"
+                            isCompleted={set.completed}
+                            bg={performance.color}
+                          />
+                        </VStack>
+
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            Done
+                          </Text>
+                          <SetCompletionButton
+                            isCompleted={set.completed}
+                            onClick={() => onSetCompletion(exerciseIndex, setIndex, !set.completed)}
+                            setNumber={setIndex + 1}
+                          />
+                        </VStack>
+                      </SimpleGrid>
+
+                      {/* Notes - Mobile */}
+                      <Box w="full">
+                        <Input
+                          value={set.notes || ""}
+                          onChange={(e) => onInputChange(exerciseIndex, setIndex, "notes", e.target.value)}
+                          placeholder="Notes (optional)"
+                          size="sm"
+                          bg="white"
+                          fontSize="sm"
+                        />
+                      </Box>
+                    </VStack>
+                  ) : (
+                    /* Desktop Layout */
+                    <VStack spacing={3}>
+                      {/* Set Header */}
+                      <Flex justify="space-between" align="center" w="full">
+                        <HStack>
+                          <Text fontWeight="bold" fontSize="lg" color="gray.700">
+                            Set {setIndex + 1}
+                          </Text>
+                          {performance.message && (
+                            <Badge 
+                              colorScheme={performance.message === "PR!" ? "green" : 
+                                         performance.message === "Below" ? "red" : "yellow"}
+                              fontSize="xs"
+                            >
+                              {performance.message}
+                            </Badge>
+                          )}
+                        </HStack>
+                        
+                        <HStack spacing={2}>
+                          {isTimerActive && (
+                            <TimerDisplay
+                              seconds={timerSeconds}
+                              isActive={isTimerActive}
+                              onStart={() => onStartTimer(exerciseIndex, setIndex)}
+                              onStop={onStopTimer}
+                            />
+                          )}
+                          
+                          {exercise.sets.length > 1 && (
+                            <IconButton
+                              icon={<DeleteIcon />}
+                              size="sm"
+                              variant="ghost"
+                              colorScheme="red"
+                              onClick={() => onDeleteSet(exerciseIndex, setIndex)}
+                              aria-label="Delete set"
+                            />
+                          )}
+                        </HStack>
+                      </Flex>
+
+                      {/* Set Inputs - Desktop Grid */}
+                      <Grid templateColumns="1fr 1fr 1fr auto" gap={4} alignItems="center" w="full">
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            Weight (kg)
+                          </Text>
+                          <QuickSetInput
+                            value={set.weight || ""}
+                            onChange={(e) => onInputChange(exerciseIndex, setIndex, "weight", e.target.value)}
+                            placeholder="0"
+                            type="text"
+                            isCompleted={set.completed}
+                            bg={performance.color}
+                          />
+                        </VStack>
+
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            Reps
+                          </Text>
+                          <QuickSetInput
+                            value={set.reps || ""}
+                            onChange={(e) => onInputChange(exerciseIndex, setIndex, "reps", e.target.value)}
+                            placeholder="0"
+                            type="text"
+                            isCompleted={set.completed}
+                            bg={performance.color}
+                          />
+                        </VStack>
+
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            RPE
+                          </Text>
+                          <QuickSetInput
+                            value={set.rpe || ""}
+                            onChange={(e) => onInputChange(exerciseIndex, setIndex, "rpe", e.target.value)}
+                            placeholder="7"
+                            type="text"
+                            isCompleted={set.completed}
+                            bg={performance.color}
+                          />
+                        </VStack>
+
+                        <VStack spacing={1}>
+                          <Text fontSize="xs" color="gray.600" fontWeight="semibold">
+                            Done
+                          </Text>
+                          <SetCompletionButton
+                            isCompleted={set.completed}
+                            onClick={() => onSetCompletion(exerciseIndex, setIndex, !set.completed)}
+                            setNumber={setIndex + 1}
+                          />
+                        </VStack>
+                      </Grid>
+
+                      {/* Notes - Desktop */}
+                      <Box w="full">
+                        <Input
+                          value={set.notes || ""}
+                          onChange={(e) => onInputChange(exerciseIndex, setIndex, "notes", e.target.value)}
+                          placeholder="Notes (optional)"
+                          size="sm"
+                          bg="white"
+                          fontSize="sm"
+                        />
+                      </Box>
+                    </VStack>
+                  )}
+                </Box>
+              );
+            })}
+
+            {/* Add Set Button */}
+            <Button
+              leftIcon={<AddIcon />}
+              variant="outline"
+              colorScheme="teal"
+              size="sm"
+              onClick={() => onAddSet(exerciseIndex)}
+              w="full"
+              borderRadius="lg"
+              borderStyle="dashed"
+              borderWidth="2px"
+              py={6}
+              _hover={{
+                bg: "teal.50",
+                borderColor: "teal.400",
+              }}
+            >
+              Add Set
+            </Button>
+          </VStack>
+        </Box>
+      </CardBody>
+    </Card>
+  );
+};
+
+// Main DailyWorkoutLog Component
 function DailyWorkoutLog({
   selectedExercises = [],
   allExercises = [],
@@ -59,6 +836,10 @@ function DailyWorkoutLog({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const toast = useToast();
+  const isMobile = useBreakpointValue({ base: true, md: false });
+  
+  // All original state variables
   const [logs, setLogs] = useState([]);
   const [previousData, setPreviousData] = useState({});
   const [programData, setProgramData] = useState({});
@@ -70,7 +851,8 @@ function DailyWorkoutLog({
   const [successMessage, setSuccessMessage] = useState(null);
   const [currentDate, setCurrentDate] = useState(
     new Date().toISOString().split("T")[0]
-  ); // Default to today
+  );
+  
   const [programDetails, setProgramDetails] = useState({
     program_name: location.state?.programName || "",
     program_macro_cycle: "",
@@ -78,6 +860,8 @@ function DailyWorkoutLog({
     day: location.state?.day || "",
     focus: location.state?.exercises?.[0]?.focus || "",
   });
+
+  // Search and modal states
   const [searchTerm, setSearchTerm] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [showChangeSearchModal, setShowChangeSearchModal] = useState(false);
@@ -86,23 +870,40 @@ function DailyWorkoutLog({
   const [isEditMode, setIsEditMode] = useState(false);
   const [isChangeMode, setIsChangeMode] = useState(false);
   const [editExerciseIndex, setEditExerciseIndex] = useState(null);
-  const isInitialized = useRef(false); // Track if logs are already initialized
-  const isDataFetched = useRef(false); // Track if data fetching is complete
-  const isMobile = useBreakpointValue({ base: true, md: false }); // Determine if on mobile view
-  const [activeTimer, setActiveTimer] = useState(null); // { exerciseIndex, setIndex, startTime }
+  
+  // Timer state
+  const [activeTimer, setActiveTimer] = useState(null);
   const [timerSeconds, setTimerSeconds] = useState(0);
   const [timerInterval, setTimerInterval] = useState(null);
+  
   // PR tracking state
   const [prData, setPrData] = useState([]);
   const [loadingPrData, setLoadingPrData] = useState(false);
   const [prError, setPrError] = useState(null);
 
-  // Fetch exercises from Supabase Exercise Library with pagination to get all records
+  // Refs for initialization tracking
+  const isInitialized = useRef(false);
+  const isDataFetched = useRef(false);
+
+  // Modal disclosure hooks
+  const { 
+    isOpen: isSearchModalOpen, 
+    onOpen: onSearchModalOpen, 
+    onClose: onSearchModalClose 
+  } = useDisclosure();
+  
+  const { 
+    isOpen: isChangeModalOpen, 
+    onOpen: onChangeModalOpen, 
+    onClose: onChangeModalClose 
+  } = useDisclosure();
+
+  // Fetch exercises from Supabase Exercise Library with pagination
   const fetchExerciseLibrary = async () => {
     try {
       let allExercises = [];
       let page = 0;
-      const pageSize = 1000; // Supabase default limit per request
+      const pageSize = 1000;
       let hasMore = true;
 
       while (hasMore) {
@@ -111,7 +912,7 @@ function DailyWorkoutLog({
           .select(
             "Exercise, Target_Muscle_Group, Video_Demonstration, In-Depth_Explanation, Favorite, 1_RM_Alex, Primary_Equipment, Mechanics, Force_Type"
           )
-          .range(page * pageSize, (page + 1) * pageSize - 1); // Fetch in chunks
+          .range(page * pageSize, (page + 1) * pageSize - 1);
 
         if (error) throw error;
         if (exercises.length === 0) {
@@ -122,11 +923,7 @@ function DailyWorkoutLog({
         }
       }
 
-      console.log(
-        "Fetched Exercise Library: ",
-        allExercises.length,
-        " exercises"
-      );
+      console.log("Fetched Exercise Library: ", allExercises.length, " exercises");
       setExerciseLibrary(allExercises);
     } catch (err) {
       console.error("Error fetching Exercise Library:", err);
@@ -136,9 +933,7 @@ function DailyWorkoutLog({
 
   // Initialize logs with pre-loaded data if available from navigation state
   useEffect(() => {
-    if (isInitialized.current) {
-      return; // Prevent re-initialization if already set
-    }
+    if (isInitialized.current) return;
 
     if (location.state?.exercises && location.state.exercises.length > 0) {
       const initialLogs = location.state.exercises.map((ex) => {
@@ -165,11 +960,7 @@ function DailyWorkoutLog({
       setLogs(initialLogs);
       onUpdateExercises(location.state.exercises);
       isInitialized.current = true;
-      console.log(
-        "Initialized logs from location.state:",
-        initialLogs.length,
-        "exercises"
-      );
+      console.log("Initialized logs from location.state:", initialLogs.length, "exercises");
     } else if (selectedExercises.length > 0) {
       const initialLogs = selectedExercises.map((ex) => {
         const targetSets = parseInt(programData[ex.Exercise]?.target_sets) || 1;
@@ -177,8 +968,7 @@ function DailyWorkoutLog({
         return {
           exercise: ex.Exercise,
           superset: programData[ex.Exercise]?.superset || "",
-          load_prescription:
-            programData[ex.Exercise]?.["load_prescription_p1rm"] || "",
+          load_prescription: programData[ex.Exercise]?.["load_prescription_p1rm"] || "",
           calculated_target_load: targetWeight,
           target_reps: programData[ex.Exercise]?.target_reps || "",
           rest: programData[ex.Exercise]?.target_rest || "",
@@ -195,19 +985,13 @@ function DailyWorkoutLog({
       });
       setLogs(initialLogs);
       isInitialized.current = true;
-      console.log(
-        "Initialized logs from selectedExercises:",
-        initialLogs.length,
-        "exercises"
-      );
+      console.log("Initialized logs from selectedExercises:", initialLogs.length, "exercises");
     }
-  }, [location.state, selectedExercises, programData]); // Dependencies for initialization
+  }, [location.state, selectedExercises, programData, onUpdateExercises]);
 
   // Fetch previous workout data, program data, and exercise library
   useEffect(() => {
-    if (isDataFetched.current) {
-      return; // Prevent re-fetching if already done
-    }
+    if (isDataFetched.current) return;
 
     const fetchData = async () => {
       try {
@@ -230,24 +1014,21 @@ function DailyWorkoutLog({
         const exerciseNames =
           location.state?.exercises?.map((ex) => ex.exercise) ||
           selectedExercises.map((ex) => ex.Exercise);
+        
         if (exerciseNames.length > 0) {
           const { data: logData, error: logError } = await supabase
             .from("Workout_Daily_Log")
             .select("exercise, weight_kg, reps, rpe")
             .in("exercise", exerciseNames)
             .order("date", { ascending: false })
-            .limit(10); // Limit to recent logs for performance
+            .limit(10);
 
           if (logError) throw logError;
-          console.log(
-            "Previous Logs fetched:",
-            logData?.length || 0,
-            "entries"
-          );
+          console.log("Previous Logs fetched:", logData?.length || 0, "entries");
 
           // Organize previous data by exercise for quick lookup (most recent first)
           const prevDataMap = {};
-          logData.forEach((log) => {
+          logData?.forEach((log) => {
             if (!prevDataMap[log.exercise]) {
               prevDataMap[log.exercise] = log;
             }
@@ -263,22 +1044,18 @@ function DailyWorkoutLog({
             .select(
               "program_name, program_macro_cycle, week, day, focus, exercise, superset, target_sets, target_reps, load_prescription_p1rm, target_weight_kg, target_rpe, target_rest, target_tempo, target_time_distance"
             )
-            .eq("program_id", programId); // Filter by selected program ID
+            .eq("program_id", programId);
 
           if (progError) throw progError;
-          console.log(
-            "Program Data fetched:",
-            progData?.length || 0,
-            "entries"
-          );
+          console.log("Program Data fetched:", progData?.length || 0, "entries");
 
           const progDataMap = {};
-          progData.forEach((item) => {
-            progDataMap[item.exercise] = item; // Map by exercise name for quick lookup
+          progData?.forEach((item) => {
+            progDataMap[item.exercise] = item;
           });
           setProgramData(progDataMap);
 
-          // Set program-wide details from the first record (assuming consistent across exercises)
+          // Set program-wide details from the first record
           if (progData.length > 0 && !location.state?.programName) {
             setProgramDetails({
               program_name: progData[0].program_name || "",
@@ -299,7 +1076,62 @@ function DailyWorkoutLog({
     };
 
     fetchData();
-  }, [selectedExercises, selectedProgramId, location.state]); // Dependencies minimized to prevent re-fetching
+  }, [selectedExercises, selectedProgramId, location.state]);
+
+  // Timer functions
+  const startTimer = (exerciseIndex, setIndex) => {
+    stopTimer();
+    const startTime = Date.now();
+    setActiveTimer({ exerciseIndex, setIndex, startTime });
+    setTimerSeconds(0);
+
+    const interval = setInterval(() => {
+      setTimerSeconds(Math.floor((Date.now() - startTime) / 1000));
+    }, 1000);
+    setTimerInterval(interval);
+    console.log(`Timer started for Exercise ${exerciseIndex}, Set ${setIndex + 1}`);
+  };
+
+  const stopTimer = () => {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      setTimerInterval(null);
+    }
+
+    if (activeTimer) {
+      const restTimeSeconds = Math.floor((Date.now() - activeTimer.startTime) / 1000);
+      const restTimeFormatted = formatTime(restTimeSeconds);
+
+      console.log(`Timer stopped. Rest time: ${restTimeFormatted}`);
+
+      // Update the rest field for the specific set
+      handleInputChange(
+        activeTimer.exerciseIndex,
+        activeTimer.setIndex,
+        "rest",
+        restTimeFormatted
+      );
+
+      setActiveTimer(null);
+      setTimerSeconds(0);
+      return restTimeFormatted;
+    }
+    return null;
+  };
+
+  const formatTime = (seconds) => {
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  };
+
+  const isTimerActiveForSet = (exerciseIndex, setIndex) => {
+    return (
+      activeTimer &&
+      activeTimer.exerciseIndex === exerciseIndex &&
+      activeTimer.setIndex === setIndex
+    );
+  };
 
   // Handle input changes for various fields
   const handleInputChange = (exerciseIndex, setIndex, field, value) => {
@@ -334,13 +1166,9 @@ function DailyWorkoutLog({
   const addSet = (exerciseIndex) => {
     setLogs((prevLogs) => {
       const updatedLogs = [...prevLogs];
-      const lastSet =
-        updatedLogs[exerciseIndex].sets[
-          updatedLogs[exerciseIndex].sets.length - 1
-        ];
+      const lastSet = updatedLogs[exerciseIndex].sets[updatedLogs[exerciseIndex].sets.length - 1];
       updatedLogs[exerciseIndex].sets.push({
-        weight:
-          lastSet.weight || updatedLogs[exerciseIndex].load_prescription || "",
+        weight: lastSet.weight || updatedLogs[exerciseIndex].load_prescription || "",
         reps: lastSet.reps || updatedLogs[exerciseIndex].target_reps || "",
         rpe: lastSet.rpe || "",
         completed: false,
@@ -374,534 +1202,6 @@ function DailyWorkoutLog({
     onUpdateExercises(updatedExercises);
   };
 
-  // Add a new exercise to the log
-  const addExerciseToLog = (exerciseName) => {
-    if (!exerciseName) return;
-    if (logs.some((log) => log.exercise === exerciseName)) {
-      alert("Exercise already added.");
-      return;
-    }
-    const exercise = exerciseLibrary.find((ex) => ex.Exercise === exerciseName);
-    if (exercise) {
-      const targetSets =
-        parseInt(programData[exercise.Exercise]?.target_sets) || 1;
-      const targetWeight =
-        programData[exercise.Exercise]?.target_weight_kg || "";
-      const newLog = {
-        exercise: exercise.Exercise,
-        superset: programData[exercise.Exercise]?.superset || "",
-        load_prescription:
-          programData[exercise.Exercise]?.["load_prescription_p1rm"] || "",
-        calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
-        target_reps: programData[exercise.Exercise]?.target_reps || "",
-        rest: programData[exercise.Exercise]?.target_rest || "",
-        tempo: programData[exercise.Exercise]?.target_tempo || "",
-        time_distance:
-          programData[exercise.Exercise]?.target_time_distance || "",
-        sets: Array.from({ length: targetSets }, () => ({
-          weight: targetWeight, // Pre-fill with target_weight_kg if available
-          reps: programData[exercise.Exercise]?.target_reps || "", // Pre-fill with target reps
-          rpe: programData[exercise.Exercise]?.target_rpe || "",
-          completed: false,
-          notes: "",
-        })),
-      };
-      setLogs((prev) => [...prev, newLog]);
-      onUpdateExercises([...selectedExercises, exercise]);
-      setSearchTerm("");
-      setShowSearch(false);
-      setShowChangeSearchModal(false);
-      setIsDetailsModalOpen(false);
-      setIsChangeMode(false);
-    }
-  };
-
-  // Replace an existing exercise with a new one
-  const replaceExercise = (exerciseIndex, newExerciseName) => {
-    if (!newExerciseName) return;
-    const newExercise = exerciseLibrary.find(
-      (ex) => ex.Exercise === newExerciseName
-    );
-    if (newExercise) {
-      const targetSets =
-        parseInt(programData[newExercise.Exercise]?.target_sets) || 1;
-      const targetWeight =
-        programData[newExercise.Exercise]?.target_weight_kg || "";
-      const newLog = {
-        exercise: newExercise.Exercise,
-        superset: programData[newExercise.Exercise]?.superset || "",
-        load_prescription:
-          programData[newExercise.Exercise]?.["load_prescription_p1rm"] || "",
-        calculated_target_load: targetWeight, // Pre-fill with target_weight_kg
-        target_reps: programData[newExercise.Exercise]?.target_reps || "",
-        rest: programData[newExercise.Exercise]?.target_rest || "",
-        tempo: programData[newExercise.Exercise]?.target_tempo || "",
-        time_distance:
-          programData[newExercise.Exercise]?.target_time_distance || "",
-        sets: Array.from({ length: targetSets }, () => ({
-          weight: targetWeight, // Pre-fill with target_weight_kg if available
-          reps: programData[newExercise.Exercise]?.target_reps || "", // Pre-fill with target reps
-          rpe: programData[newExercise.Exercise]?.target_rpe || "",
-          completed: false,
-          notes: "",
-        })),
-      };
-      setLogs((prev) => {
-        const updatedLogs = [...prev];
-        updatedLogs[exerciseIndex] = newLog;
-        return updatedLogs;
-      });
-      setSelectedExerciseDetails(null);
-      setIsDetailsModalOpen(false);
-      setIsChangeMode(false);
-      setShowSearch(false);
-      setShowChangeSearchModal(false);
-      // Update selectedExercises
-      const updatedExercises = [...selectedExercises];
-      updatedExercises[exerciseIndex] = newExercise;
-      onUpdateExercises(updatedExercises);
-    }
-  };
-
-  // Open details modal for an exercise
-  // Open details modal for an exercise with PR data
-  const openDetailsModal = (exerciseIndex) => {
-    const exercise = logs[exerciseIndex];
-    // Find additional details from exerciseLibrary if available
-    const exerciseDetails =
-      exerciseLibrary.find(
-        (ex) =>
-          ex.Exercise.trim().toLowerCase() ===
-          exercise.exercise.trim().toLowerCase()
-      ) || {};
-
-    setSelectedExerciseDetails({
-      ...exercise,
-      index: exerciseIndex,
-      targetMuscleGroup: exerciseDetails.Target_Muscle_Group || "N/A",
-      videoDemonstration: exerciseDetails.Video_Demonstration || "",
-      inDepthExplanation: exerciseDetails["In-Depth_Explanation"] || "",
-      favorite: exerciseDetails.Favorite || "",
-      oneRmAlex: exerciseDetails["1_RM_Alex"] || "N/A",
-    });
-
-    setIsDetailsModalOpen(true);
-    setIsEditMode(false);
-    setIsChangeMode(false);
-    setEditExerciseIndex(exerciseIndex);
-
-    // Fetch PR data for this exercise
-    fetchPrData(exercise.exercise);
-  };
-
-  // Open change exercise mode
-  const openChangeExercise = (exerciseIndex) => {
-    setEditExerciseIndex(exerciseIndex);
-    setIsChangeMode(true);
-    setShowChangeSearchModal(true);
-    setShowSearch(false); // Ensure the bottom search is closed to avoid confusion
-    setSearchTerm(""); // Reset search term for a fresh search
-  };
-
-  // Save edited exercise details to Supabase
-  // Add this to your saveEditedDetails function, right before the update:
-  const saveEditedDetails = async () => {
-    if (!editingExercise) return;
-
-    try {
-      setSaving(true);
-      setError(null);
-
-      // Check authentication first
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
-        setError("You must be logged in to update exercise details");
-        return;
-      }
-
-      console.log("=== DEBUGGING SUPABASE UPDATE ===");
-      console.log("Exercise name:", selectedExerciseDetails.exercise);
-      console.log("User ID:", session.user.id);
-      console.log("User email:", session.user.email);
-
-      // First, let's try to find the exact record
-      // First, let's try to find the exact record
-      const { data: findData, error: findError } = await supabase
-        .from("Exercise Library")
-        .select("*")
-        .eq("Exercise", editingExercise.exercise);
-
-      console.log("Found records:", findData);
-      console.log("Find error:", findError);
-
-      if (findError) throw findError;
-      if (!findData || findData.length === 0) {
-        throw new Error(
-          `Exercise "${editingExercise.exercise}" not found in database`
-        );
-      }
-
-      // Log the current record details
-      const currentRecord = findData[0];
-      console.log("Current record in DB:", currentRecord);
-
-      // Prepare the update data - make sure we're not updating with identical values
-      const updateData = {};
-
-      // Only include fields that have actually changed
-      if (
-        currentRecord.Target_Muscle_Group !== editingExercise.targetMuscleGroup
-      ) {
-        updateData.Target_Muscle_Group = editingExercise.targetMuscleGroup;
-      }
-      if (
-        currentRecord.Video_Demonstration !== editingExercise.videoDemonstration
-      ) {
-        updateData.Video_Demonstration = editingExercise.videoDemonstration;
-      }
-      if (
-        currentRecord["In-Depth_Explanation"] !==
-        editingExercise.inDepthExplanation
-      ) {
-        updateData["In-Depth_Explanation"] = editingExercise.inDepthExplanation;
-      }
-      if (currentRecord.Favorite !== editingExercise.favorite) {
-        updateData.Favorite = editingExercise.favorite;
-      }
-      if (currentRecord["1_RM_Alex"] !== editingExercise.oneRmAlex) {
-        updateData["1_RM_Alex"] = editingExercise.oneRmAlex;
-      }
-
-      console.log("Update data (only changed fields):", updateData);
-
-      // If no fields have changed, don't perform update
-      if (Object.keys(updateData).length === 0) {
-        setSuccessMessage(
-          "No changes detected - exercise details are already up to date!"
-        );
-        setIsDetailsModalOpen(false);
-        setSelectedExerciseDetails(null);
-        setIsEditMode(false);
-        setEditingExercise(null);
-        setTimeout(() => setSuccessMessage(null), 3000);
-        return;
-      }
-
-      // Update the Exercise Library table
-      const { data: updateResult, error: updateError } = await supabase
-        .from("Exercise Library")
-        .update(updateData)
-        .eq("Exercise", editingExercise.exercise)
-        .select();
-
-      console.log("Update result:", updateResult);
-      console.log("Update error:", updateError);
-
-      if (updateError) {
-        console.error("Supabase update error details:", updateError);
-        throw updateError;
-      }
-
-      // Check if the update actually affected any rows
-      if (!updateResult || updateResult.length === 0) {
-        console.error(
-          "Update returned empty result - likely RLS policy blocking update"
-        );
-        throw new Error(
-          "Update was blocked - this is likely due to Row Level Security policies. Check your Supabase table permissions."
-        );
-      }
-
-      // Update local state to reflect changes
-      setExerciseLibrary((prevLibrary) =>
-        prevLibrary.map((ex) =>
-          ex.Exercise === editingExercise.exercise
-            ? { ...ex, ...updateData }
-            : ex
-        )
-      );
-
-      // Update the selected exercise for the modal
-      setSelectedExerciseDetails((prev) => ({ ...prev, ...updateData }));
-
-      setSuccessMessage(
-        `Exercise details updated successfully! Updated ${
-          Object.keys(updateData).length
-        } field(s).`
-      );
-
-      // Close modal after success
-      setTimeout(() => {
-        setSuccessMessage(null);
-        setIsDetailsModalOpen(false);
-        setIsEditMode(false);
-        setEditingExercise(null);
-      }, 2000);
-    } catch (err) {
-      console.error("Error updating exercise details:", err);
-      setError(err.message || "Failed to update exercise details");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // --------------------------- next part -------------------------------------------------------------------------------------------------
-  //Handle edit field changes in modal with enhanced validation
-  // Handle edit field changes in modal with enhanced validation
-  const handleEditFieldChange = (field, value) => {
-    console.log(`Changing ${field} to:`, value, typeof value);
-
-    // Special handling for 1RM field to prevent number input issues
-    if (field === "oneRmAlex") {
-      console.log("1RM value being set:", value);
-      // Allow empty, "N/A", or valid numbers
-      if (
-        value === "" ||
-        value === "N/A" ||
-        value.toLowerCase() === "n/a" ||
-        !isNaN(parseFloat(value))
-      ) {
-        setEditingExercise((prev) => ({ ...prev, [field]: value }));
-      }
-      return;
-    }
-
-    // Handle all other fields normally
-    setEditingExercise((prev) => ({ ...prev, [field]: value }));
-  };
-
-  // Timer functions
-  // Timer functions
-  const startTimer = (exerciseIndex, setIndex) => {
-    // Stop any existing timer first
-    stopTimer();
-
-    const startTime = Date.now();
-    setActiveTimer({ exerciseIndex, setIndex, startTime });
-    setTimerSeconds(0);
-
-    // Start the interval to update timer display
-    const interval = setInterval(() => {
-      setTimerSeconds(Math.floor((Date.now() - startTime) / 1000));
-    }, 1000);
-
-    setTimerInterval(interval);
-    console.log(
-      `Timer started for Exercise ${exerciseIndex}, Set ${setIndex + 1}`
-    );
-  };
-
-  const stopTimer = () => {
-    if (timerInterval) {
-      clearInterval(timerInterval);
-      setTimerInterval(null);
-    }
-
-    if (activeTimer) {
-      const restTimeSeconds = Math.floor(
-        (Date.now() - activeTimer.startTime) / 1000
-      );
-      const restTimeFormatted = formatTime(restTimeSeconds);
-
-      console.log(`Timer stopped. Rest time: ${restTimeFormatted}`);
-
-      // Update the rest field for the specific set (using existing rest field)
-      handleInputChange(
-        activeTimer.exerciseIndex,
-        activeTimer.setIndex,
-        "rest",
-        restTimeFormatted
-      );
-
-      setActiveTimer(null);
-      setTimerSeconds(0);
-      return restTimeFormatted;
-    }
-    return null;
-  };
-
-  const formatTime = (seconds) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
-  };
-
-  const isTimerActiveForSet = (exerciseIndex, setIndex) => {
-    return (
-      activeTimer &&
-      activeTimer.exerciseIndex === exerciseIndex &&
-      activeTimer.setIndex === setIndex
-    );
-  };
-
-  // Smart search across multiple columns with favorite prioritization
-  // Smart search across multiple columns with favorite prioritization
-  const filteredExercises = searchTerm
-    ? exerciseLibrary
-        .filter((ex) => {
-          const searchTerms = searchTerm.toLowerCase().split(" "); // Split search term into individual words
-          const searchableFields = [
-            ex.Exercise?.toLowerCase() || "",
-            ex.Target_Muscle_Group?.toLowerCase() || "",
-            ex.Primary_Equipment?.toLowerCase() || "",
-            ex.Mechanics?.toLowerCase() || "",
-            ex.Force_Type?.toLowerCase() || "",
-            ex.Favorite?.toString().toLowerCase() || "",
-          ].join(" "); // Combine fields into a single searchable string
-
-          // Smart search: match all terms in any order within the combined fields
-          return searchTerms.every((term) => searchableFields.includes(term));
-        })
-        .sort((a, b) => {
-          // Helper function to check if an exercise is marked as favorite
-          const isFavorite = (exercise) => {
-            const favoriteValue = exercise.Favorite?.toString().toLowerCase();
-            return favoriteValue === "yes" || favoriteValue === "y";
-          };
-
-          const aIsFavorite = isFavorite(a);
-          const bIsFavorite = isFavorite(b); // Fixed this line - was missing 'isFavorite('
-
-          // If both are favorites or both are not favorites, sort alphabetically by exercise name
-          if (aIsFavorite === bIsFavorite) {
-            return (a.Exercise || "").localeCompare(b.Exercise || "");
-          }
-
-          // Favorites come first
-          return aIsFavorite ? -1 : 1;
-        })
-    : exerciseLibrary.sort((a, b) => {
-        // Even when no search term, show favorites first, then alphabetical
-        const isFavorite = (exercise) => {
-          const favoriteValue = exercise.Favorite?.toString().toLowerCase();
-          return favoriteValue === "yes" || favoriteValue === "y";
-        };
-
-        const aIsFavorite = isFavorite(a);
-        const bIsFavorite = isFavorite(b);
-
-        // If both are favorites or both are not favorites, sort alphabetically by exercise name
-        if (aIsFavorite === bIsFavorite) {
-          return (a.Exercise || "").localeCompare(b.Exercise || "");
-        }
-
-        // Favorites come first
-        return aIsFavorite ? -1 : 1;
-      });
-
-  // --------------------next function
-  // Determine if current input beats the last performance
-  const getPerformanceStatus = (exercise, currentWeight, currentReps) => {
-    const last = previousData[exercise];
-    if (!last || !currentWeight || !currentReps)
-      return { color: "gray.50", message: "" };
-
-    const lastWeight = last["weight_kg"] || 0;
-    const lastReps = last.reps || 0;
-    const currentW = parseFloat(currentWeight) || 0;
-    const currentR = parseInt(currentReps) || 0;
-
-    if (
-      currentW > lastWeight ||
-      (currentW === lastWeight && currentR > lastReps)
-    ) {
-      return { color: "green.100", message: "Beating Last!" };
-    } else if (
-      currentW < lastWeight ||
-      (currentW === lastWeight && currentR < lastReps)
-    ) {
-      return { color: "red.100", message: "Below Last" };
-    }
-    return { color: "yellow.100", message: "Matching Last" };
-  };
-
-  // Save logs to Supabase
-  const saveLogs = async () => {
-    setSaving(true);
-    try {
-      setError(null);
-      setSuccessMessage(null);
-
-      // Get current user session
-      const { data: sessionData, error: sessionError } =
-        await supabase.auth.getSession();
-      if (sessionError) {
-        console.error("Error fetching session:", sessionError);
-        throw new Error("Unable to fetch user session. Please log in again.");
-      }
-
-      if (!sessionData?.session) {
-        navigate("/login");
-        return;
-      }
-
-      const userId = sessionData.session.user.id;
-      const logEntries = [];
-
-      logs.forEach((log) => {
-        log.sets.forEach((set, setIndex) => {
-          if (set.weight && set.reps) {
-            // Only save sets with data
-            const last = previousData[log.exercise];
-            const previousRepKg = last
-              ? `${last.reps} x ${last["weight_kg"]}kg`
-              : "N/A";
-            logEntries.push({
-              exercise: log.exercise,
-              program_name: programDetails.program_name || "N/A",
-              program_macro_cycle: programDetails.program_macro_cycle || "N/A",
-              week: programDetails.week || "N/A",
-              day: programDetails.day || "N/A",
-              focus: programDetails.focus || "N/A",
-              superset: log.superset || "N/A",
-              set: setIndex + 1, // Set number
-              weight_kg: parseFloat(set.weight) || 0,
-              reps: parseInt(set.reps) || 0,
-              rpe: set.rpe ? parseFloat(set.rpe) || 0 : null,
-              load_prescription_p1rm: log.load_prescription || "N/A",
-              calculated_target_load: log.calculated_target_load || "N/A",
-              target_reps: log.target_reps || "N/A",
-              previous_rep_x_kg: previousRepKg,
-              rest: set.rest || log.rest || "N/A",
-              tempo: log.tempo || "N/A",
-              time_distance: log.time_distance || "N/A",
-              completed: set.completed || false,
-              notes: set.notes || "",
-              date: currentDate || new Date().toISOString().split("T")[0],
-              user_id: userId,
-              program_id:
-                location.state?.programId || selectedProgramId || "N/A",
-            });
-          }
-        });
-      });
-
-      if (logEntries.length === 0) {
-        alert("No complete sets to save. Please enter weight and reps.");
-        setSaving(false);
-        return;
-      }
-
-      const { error } = await supabase
-        .from("Workout_Daily_Log")
-        .insert(logEntries);
-      if (error) throw error;
-
-      setSuccessMessage("Workout logs saved successfully!");
-      setTimeout(() => {
-        setLogs([]);
-        onUpdateExercises([]);
-        navigate("/"); // Redirect to dashboard after saving
-      }, 2000);
-    } catch (err) {
-      setError(err.message || "Failed to save workout logs");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   // Enhanced checkbox handler that starts/stops timer
   const handleSetCompletion = (exerciseIndex, setIndex, isCompleted) => {
     // Update the completed status
@@ -910,6 +1210,16 @@ function DailyWorkoutLog({
     if (isCompleted) {
       // Set is marked as done - start timer
       startTimer(exerciseIndex, setIndex);
+      if (toast) {
+        toast({
+          title: "Set completed!",
+          description: "Rest timer started",
+          status: "success",
+          duration: 2000,
+          isClosable: true,
+          position: "top",
+        });
+      }
     } else {
       // Set is unmarked - stop timer if it's active for this set
       if (isTimerActiveForSet(exerciseIndex, setIndex)) {
@@ -917,1574 +1227,1303 @@ function DailyWorkoutLog({
       }
     }
   };
-
-  // Fetch PR progression data for an exercise
-  const fetchPrData = async (exerciseName) => {
-    try {
-      setLoadingPrData(true);
-      setPrError(null);
-
-      console.log("Fetching PR data for:", exerciseName);
-
-      // Get current user session
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
-        setPrError("You must be logged in to view PR data");
-        return;
-      }
-
-      // Fetch all workout logs for this exercise for the current user
-      const { data: workoutLogs, error } = await supabase
-        .from("Workout_Daily_Log")
-        .select("date, weight_kg, reps, rpe, set")
-        .eq("exercise", exerciseName)
-        .eq("user_id", session.user.id)
-        .order("date", { ascending: true });
-
-      if (error) {
-        console.error("Error fetching PR data:", error);
-        throw error;
-      }
-
-      console.log("Raw workout logs:", workoutLogs);
-
-      if (!workoutLogs || workoutLogs.length === 0) {
-        setPrData([]);
-        return;
-      }
-
-      // Process the data to calculate key strength metrics
-      const processedData = processWorkoutDataForPrChart(workoutLogs);
-      console.log("Processed PR data:", processedData);
-
-      setPrData(processedData);
-    } catch (err) {
-      console.error("Error fetching PR data:", err);
-      setPrError(err.message || "Failed to fetch PR data");
-    } finally {
-      setLoadingPrData(false);
-    }
-  };
-
-  // Process workout data into PR progression metrics
-  const processWorkoutDataForPrChart = (workoutLogs) => {
-    // Group by date and calculate daily bests
-    const dailyData = {};
-
-    workoutLogs.forEach((log) => {
-      const date = log.date;
-      const weight = parseFloat(log.weight_kg) || 0;
-      const reps = parseInt(log.reps) || 0;
-      const rpe = parseFloat(log.rpe) || null;
-
-      if (weight > 0 && reps > 0) {
-        if (!dailyData[date]) {
-          dailyData[date] = {
-            date,
-            maxWeight: weight,
-            bestSet: { weight, reps, rpe },
-            totalVolume: 0,
-            avgRpe: [],
-            estimated1RM: 0,
-          };
-        }
-
-        // Track max weight for the day
-        if (weight > dailyData[date].maxWeight) {
-          dailyData[date].maxWeight = weight;
-          dailyData[date].bestSet = { weight, reps, rpe };
-        }
-
-        // Calculate volume (weight x reps)
-        dailyData[date].totalVolume += weight * reps;
-
-        // Track RPE if available
-        if (rpe) {
-          dailyData[date].avgRpe.push(rpe);
-        }
-      }
-    });
-
-    // Convert to array and calculate additional metrics
-    const chartData = Object.values(dailyData).map((day) => {
-      const { weight, reps } = day.bestSet;
-
-      // Calculate estimated 1RM using Epley formula: weight * (1 + reps/30)
-      const estimated1RM = Math.round(weight * (1 + reps / 30));
-
-      // Calculate average RPE for the day
-      const avgRpe =
-        day.avgRpe.length > 0
-          ? Math.round(
-              (day.avgRpe.reduce((a, b) => a + b, 0) / day.avgRpe.length) * 10
-            ) / 10
-          : null;
-
-      return {
-        date: day.date,
-        formattedDate: new Date(day.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
-        maxWeight: day.maxWeight,
-        bestReps: day.bestSet.reps,
-        estimated1RM,
-        totalVolume: day.totalVolume,
-        avgRpe,
-        // Calculate relative intensity (% of estimated 1RM)
-        relativeIntensity: Math.round((day.maxWeight / estimated1RM) * 100),
-      };
-    });
-
-    // Sort by date
-    return chartData.sort((a, b) => new Date(a.date) - new Date(b.date));
-  };
-
-  // ADD DEBUGGING CODE HERE
-  useEffect(() => {
-    console.log("=== DEBUGGING VALUES ===");
-    logs.forEach((log, logIndex) => {
-      console.log(`Exercise ${logIndex}: ${log.exercise}`);
-      log.sets.forEach((set, setIndex) => {
-        console.log(`  Set ${setIndex}:`, {
-          weight: set.weight,
-          weightType: typeof set.weight,
-          reps: set.reps,
-          repsType: typeof set.reps,
-          rpe: set.rpe,
-          rpeType: typeof set.rpe,
-        });
-      });
-    });
-
-    if (selectedExerciseDetails) {
-      console.log("Selected exercise details:", {
-        oneRmAlex: selectedExerciseDetails.oneRmAlex,
-        oneRmAlexType: typeof selectedExerciseDetails.oneRmAlex,
+// Add a new exercise to the log
+const addExerciseToLog = (exerciseName) => {
+  if (!exerciseName) return;
+  if (logs.some((log) => log.exercise === exerciseName)) {
+    if (toast) {
+      toast({
+        title: "Exercise already added",
+        description: "This exercise is already in your workout",
+        status: "warning",
+        duration: 3000,
+        isClosable: true,
       });
     }
-  }, [logs, selectedExerciseDetails]);
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (timerInterval) {
-        clearInterval(timerInterval);
-      }
+    return;
+  }
+  
+  const exercise = exerciseLibrary.find((ex) => ex.Exercise === exerciseName);
+  if (exercise) {
+    const targetSets = parseInt(programData[exercise.Exercise]?.target_sets) || 1;
+    const targetWeight = programData[exercise.Exercise]?.target_weight_kg || "";
+    const newLog = {
+      exercise: exercise.Exercise,
+      superset: programData[exercise.Exercise]?.superset || "",
+      load_prescription: programData[exercise.Exercise]?.["load_prescription_p1rm"] || "",
+      calculated_target_load: targetWeight,
+      target_reps: programData[exercise.Exercise]?.target_reps || "",
+      rest: programData[exercise.Exercise]?.target_rest || "",
+      tempo: programData[exercise.Exercise]?.target_tempo || "",
+      time_distance: programData[exercise.Exercise]?.target_time_distance || "",
+      sets: Array.from({ length: targetSets }, () => ({
+        weight: targetWeight,
+        reps: programData[exercise.Exercise]?.target_reps || "",
+        rpe: programData[exercise.Exercise]?.target_rpe || "",
+        completed: false,
+        notes: "",
+      })),
     };
-  }, [timerInterval]);
+    setLogs((prev) => [...prev, newLog]);
+    onUpdateExercises([...selectedExercises, exercise]);
+    setSearchTerm("");
+    onSearchModalClose();
+  }
+};
 
-  if (loading) {
-    return <Spinner size="md" color="teal.500" mt={4} />;
+// Replace an existing exercise with a new one
+const replaceExercise = (exerciseIndex, newExerciseName) => {
+  if (!newExerciseName) return;
+  const newExercise = exerciseLibrary.find((ex) => ex.Exercise === newExerciseName);
+  if (newExercise) {
+    const targetSets = parseInt(programData[newExercise.Exercise]?.target_sets) || 1;
+    const targetWeight = programData[newExercise.Exercise]?.target_weight_kg || "";
+    const newLog = {
+      exercise: newExercise.Exercise,
+      superset: programData[newExercise.Exercise]?.superset || "",
+      load_prescription: programData[newExercise.Exercise]?.["load_prescription_p1rm"] || "",
+      calculated_target_load: targetWeight,
+      target_reps: programData[newExercise.Exercise]?.target_reps || "",
+      rest: programData[newExercise.Exercise]?.target_rest || "",
+      tempo: programData[newExercise.Exercise]?.target_tempo || "",
+      time_distance: programData[newExercise.Exercise]?.target_time_distance || "",
+      sets: Array.from({ length: targetSets }, () => ({
+        weight: targetWeight,
+        reps: programData[newExercise.Exercise]?.target_reps || "",
+        rpe: programData[newExercise.Exercise]?.target_rpe || "",
+        completed: false,
+        notes: "",
+      })),
+    };
+    
+    setLogs((prev) => {
+      const updatedLogs = [...prev];
+      updatedLogs[exerciseIndex] = newLog;
+      return updatedLogs;
+    });
+    
+    // Update selectedExercises
+    const updatedExercises = [...selectedExercises];
+    updatedExercises[exerciseIndex] = newExercise;
+    onUpdateExercises(updatedExercises);
+    
+    // Close modals and reset states
+    setSelectedExerciseDetails(null);
+    setIsDetailsModalOpen(false);
+    setIsChangeMode(false);
+    setEditExerciseIndex(null);
+    onChangeModalClose();
+    setSearchTerm("");
+    
+    if (toast) {
+      toast({
+        title: "Exercise changed",
+        description: `Changed to ${newExerciseName}`,
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      });
+    }
+  }
+};
+
+// Open change exercise modal
+const openChangeExercise = (exerciseIndex) => {
+  setEditExerciseIndex(exerciseIndex);
+  setIsChangeMode(true);
+  setSearchTerm("");
+  onChangeModalClose(); // Close any existing modal first
+  setTimeout(() => onChangeModalOpen(), 100); // Open with slight delay
+};
+
+// Handle exercise selection from change modal
+const handleChangeExerciseSelect = (exerciseName) => {
+  if (editExerciseIndex !== null) {
+    replaceExercise(editExerciseIndex, exerciseName);
+  }
+};
+
+// Open details modal for an exercise with PR data
+const openDetailsModal = (exerciseIndex) => {
+  const exercise = logs[exerciseIndex];
+  // Find additional details from exerciseLibrary if available
+  const exerciseDetails = exerciseLibrary.find(
+    (ex) => ex.Exercise?.trim().toLowerCase() === exercise.exercise?.trim().toLowerCase()
+  ) || {};
+
+  setSelectedExerciseDetails({
+    ...exercise,
+    index: exerciseIndex,
+    targetMuscleGroup: exerciseDetails.Target_Muscle_Group || "N/A",
+    videoDemonstration: exerciseDetails.Video_Demonstration || "",
+    inDepthExplanation: exerciseDetails["In-Depth_Explanation"] || "",
+    favorite: exerciseDetails.Favorite || "",
+    oneRmAlex: exerciseDetails["1_RM_Alex"] || "N/A",
+    primaryEquipment: exerciseDetails.Primary_Equipment || "N/A",
+    mechanics: exerciseDetails.Mechanics || "N/A",
+    forceType: exerciseDetails.Force_Type || "N/A",
+  });
+
+  setIsDetailsModalOpen(true);
+  setIsEditMode(false);
+  setIsChangeMode(false);
+  setEditExerciseIndex(exerciseIndex);
+
+  // Fetch PR data for this exercise
+  fetchPrData(exercise.exercise);
+};
+
+// Fetch PR progression data for an exercise
+const fetchPrData = async (exerciseName) => {
+  try {
+    setLoadingPrData(true);
+    setPrError(null);
+
+    console.log("Fetching PR data for:", exerciseName);
+
+    // Get current user session
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setPrError("You must be logged in to view PR data");
+      return;
+    }
+
+    // Fetch all workout logs for this exercise for the current user
+    const { data: workoutLogs, error } = await supabase
+      .from("Workout_Daily_Log")
+      .select("date, weight_kg, reps, rpe, set")
+      .eq("exercise", exerciseName)
+      .eq("user_id", session.user.id)
+      .order("date", { ascending: true });
+
+    if (error) {
+      console.error("Error fetching PR data:", error);
+      throw error;
+    }
+
+    console.log("Raw workout logs:", workoutLogs);
+
+    if (!workoutLogs || workoutLogs.length === 0) {
+      setPrData([]);
+      return;
+    }
+
+    // Process the data to calculate key strength metrics
+    const processedData = processWorkoutDataForPrChart(workoutLogs);
+    console.log("Processed PR data:", processedData);
+
+    setPrData(processedData);
+  } catch (err) {
+    console.error("Error fetching PR data:", err);
+    setPrError(err.message || "Failed to fetch PR data");
+  } finally {
+    setLoadingPrData(false);
+  }
+};
+
+// Process workout data into PR progression metrics
+const processWorkoutDataForPrChart = (workoutLogs) => {
+  // Group by date and calculate daily bests
+  const dailyData = {};
+
+  workoutLogs.forEach((log) => {
+    const date = log.date;
+    const weight = parseFloat(log.weight_kg) || 0;
+    const reps = parseInt(log.reps) || 0;
+    const rpe = parseFloat(log.rpe) || null;
+
+    if (weight > 0 && reps > 0) {
+      if (!dailyData[date]) {
+        dailyData[date] = {
+          date,
+          maxWeight: weight,
+          bestSet: { weight, reps, rpe },
+          totalVolume: 0,
+          avgRpe: [],
+          estimated1RM: 0,
+        };
+      }
+
+      // Track max weight for the day
+      if (weight > dailyData[date].maxWeight) {
+        dailyData[date].maxWeight = weight;
+        dailyData[date].bestSet = { weight, reps, rpe };
+      }
+
+      // Calculate volume (weight x reps)
+      dailyData[date].totalVolume += weight * reps;
+
+      // Track RPE if available
+      if (rpe) {
+        dailyData[date].avgRpe.push(rpe);
+      }
+    }
+  });
+
+  // Convert to array and calculate additional metrics
+  const chartData = Object.values(dailyData).map((day) => {
+    const { weight, reps } = day.bestSet;
+
+    // Calculate estimated 1RM using Epley formula: weight * (1 + reps/30)
+    const estimated1RM = Math.round(weight * (1 + reps / 30));
+
+    // Calculate average RPE for the day
+    const avgRpe = day.avgRpe.length > 0
+      ? Math.round((day.avgRpe.reduce((a, b) => a + b, 0) / day.avgRpe.length) * 10) / 10
+      : null;
+
+    return {
+      date: day.date,
+      formattedDate: new Date(day.date).toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      }),
+      maxWeight: day.maxWeight,
+      bestReps: day.bestSet.reps,
+      estimated1RM,
+      totalVolume: day.totalVolume,
+      avgRpe,
+      // Calculate relative intensity (% of estimated 1RM)
+      relativeIntensity: Math.round((day.maxWeight / estimated1RM) * 100),
+    };
+  });
+
+  // Sort by date
+  return chartData.sort((a, b) => new Date(a.date) - new Date(b.date));
+};
+
+// Save edited exercise details to Supabase
+const saveEditedDetails = async () => {
+  if (!editingExercise) return;
+
+  try {
+    setSaving(true);
+    setError(null);
+
+    // Check authentication first
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setError("You must be logged in to update exercise details");
+      return;
+    }
+
+    console.log("=== UPDATING EXERCISE DETAILS ===");
+    console.log("Exercise name:", selectedExerciseDetails.exercise);
+
+    // First, find the exact record
+    const { data: findData, error: findError } = await supabase
+      .from("Exercise Library")
+      .select("*")
+      .eq("Exercise", editingExercise.exercise);
+
+    if (findError) throw findError;
+    if (!findData || findData.length === 0) {
+      throw new Error(`Exercise "${editingExercise.exercise}" not found in database`);
+    }
+
+    const currentRecord = findData[0];
+    const updateData = {};
+
+    // Only include fields that have actually changed
+    if (currentRecord.Target_Muscle_Group !== editingExercise.targetMuscleGroup) {
+      updateData.Target_Muscle_Group = editingExercise.targetMuscleGroup;
+    }
+    if (currentRecord.Video_Demonstration !== editingExercise.videoDemonstration) {
+      updateData.Video_Demonstration = editingExercise.videoDemonstration;
+    }
+    if (currentRecord["In-Depth_Explanation"] !== editingExercise.inDepthExplanation) {
+      updateData["In-Depth_Explanation"] = editingExercise.inDepthExplanation;
+    }
+    if (currentRecord.Favorite !== editingExercise.favorite) {
+      updateData.Favorite = editingExercise.favorite;
+    }
+    if (currentRecord["1_RM_Alex"] !== editingExercise.oneRmAlex) {
+      updateData["1_RM_Alex"] = editingExercise.oneRmAlex;
+    }
+
+    // If no fields have changed, don't perform update
+    if (Object.keys(updateData).length === 0) {
+      if (toast) {
+        toast({
+          title: "No changes detected",
+          description: "Exercise details are already up to date!",
+          status: "info",
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+      setIsDetailsModalOpen(false);
+      setSelectedExerciseDetails(null);
+      setIsEditMode(false);
+      setEditingExercise(null);
+      return;
+    }
+
+    // Update the Exercise Library table
+    const { data: updateResult, error: updateError } = await supabase
+      .from("Exercise Library")
+      .update(updateData)
+      .eq("Exercise", editingExercise.exercise)
+      .select();
+
+    if (updateError) {
+      console.error("Supabase update error details:", updateError);
+      throw updateError;
+    }
+
+    // Check if the update actually affected any rows
+    if (!updateResult || updateResult.length === 0) {
+      throw new Error("Update was blocked - check your permissions.");
+    }
+
+    // Update local state to reflect changes
+    setExerciseLibrary((prevLibrary) =>
+      prevLibrary.map((ex) =>
+        ex.Exercise === editingExercise.exercise ? { ...ex, ...updateData } : ex
+      )
+    );
+
+    // Update the selected exercise for the modal
+    setSelectedExerciseDetails((prev) => ({ ...prev, ...updateData }));
+
+    if (toast) {
+      toast({
+        title: "Exercise updated!",
+        description: `Updated ${Object.keys(updateData).length} field(s) successfully.`,
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+
+    // Close modal after success
+    setTimeout(() => {
+      setIsDetailsModalOpen(false);
+      setIsEditMode(false);
+      setEditingExercise(null);
+    }, 1000);
+  } catch (err) {
+    console.error("Error updating exercise details:", err);
+    setError(err.message || "Failed to update exercise details");
+    if (toast) {
+      toast({
+        title: "Update failed",
+        description: err.message || "Failed to update exercise details",
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  } finally {
+    setSaving(false);
+  }
+};
+
+// Handle edit field changes in modal with enhanced validation
+const handleEditFieldChange = (field, value) => {
+  console.log(`Changing ${field} to:`, value, typeof value);
+
+  // Special handling for 1RM field to prevent number input issues
+  if (field === "oneRmAlex") {
+    console.log("1RM value being set:", value);
+    // Allow empty, "N/A", or valid numbers
+    if (
+      value === "" ||
+      value === "N/A" ||
+      value.toLowerCase() === "n/a" ||
+      !isNaN(parseFloat(value))
+    ) {
+      setEditingExercise((prev) => ({ ...prev, [field]: value }));
+    }
+    return;
   }
 
-  if (error) {
-    return (
+  // Handle all other fields normally
+  setEditingExercise((prev) => ({ ...prev, [field]: value }));
+};
+
+// Toggle favorite status
+const toggleFavorite = async (exerciseName, currentFavorite) => {
+  try {
+    const newFavoriteValue = currentFavorite?.toLowerCase() === "yes" || 
+                            currentFavorite?.toLowerCase() === "y" ? "No" : "Yes";
+
+    const { error } = await supabase
+      .from("Exercise Library")
+      .update({ Favorite: newFavoriteValue })
+      .eq("Exercise", exerciseName);
+
+    if (error) throw error;
+
+    // Update local state
+    setExerciseLibrary((prevLibrary) =>
+      prevLibrary.map((ex) =>
+        ex.Exercise === exerciseName ? { ...ex, Favorite: newFavoriteValue } : ex
+      )
+    );
+
+    // Update selected exercise details if it's the same exercise
+    if (selectedExerciseDetails?.exercise === exerciseName) {
+      setSelectedExerciseDetails((prev) => ({ ...prev, favorite: newFavoriteValue }));
+    }
+
+    if (toast) {
+      toast({
+        title: newFavoriteValue === "Yes" ? "Added to favorites" : "Removed from favorites",
+        description: exerciseName,
+        status: "success",
+        duration: 2000,
+        isClosable: true,
+      });
+    }
+  } catch (err) {
+    console.error("Error toggling favorite:", err);
+    if (toast) {
+      toast({
+        title: "Error updating favorite",
+        description: err.message,
+        status: "error",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+  }
+};
+
+// Save logs to Supabase
+const saveLogs = async () => {
+  setSaving(true);
+  try {
+    setError(null);
+    setSuccessMessage(null);
+
+    // Get current user session
+    const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+    if (sessionError) {
+      console.error("Error fetching session:", sessionError);
+      throw new Error("Unable to fetch user session. Please log in again.");
+    }
+
+    if (!sessionData?.session) {
+      navigate("/login");
+      return;
+    }
+
+    const userId = sessionData.session.user.id;
+    const logEntries = [];
+
+    logs.forEach((log) => {
+      log.sets.forEach((set, setIndex) => {
+        if (set.weight && set.reps) {
+          // Only save sets with data
+          const last = previousData[log.exercise];
+          const previousRepKg = last ? `${last.reps} x ${last["weight_kg"]}kg` : "N/A";
+          logEntries.push({
+            exercise: log.exercise,
+            program_name: programDetails.program_name || "N/A",
+            program_macro_cycle: programDetails.program_macro_cycle || "N/A",
+            week: programDetails.week || "N/A",
+            day: programDetails.day || "N/A",
+            focus: programDetails.focus || "N/A",
+            superset: log.superset || "N/A",
+            set: setIndex + 1, // Set number
+            weight_kg: parseFloat(set.weight) || 0,
+            reps: parseInt(set.reps) || 0,
+            rpe: set.rpe ? parseFloat(set.rpe) || 0 : null,
+            load_prescription_p1rm: log.load_prescription || "N/A",
+            calculated_target_load: log.calculated_target_load || "N/A",
+            target_reps: log.target_reps || "N/A",
+            previous_rep_x_kg: previousRepKg,
+            rest: set.rest || log.rest || "N/A",
+            tempo: log.tempo || "N/A",
+            time_distance: log.time_distance || "N/A",
+            completed: set.completed || false,
+            notes: set.notes || "",
+            date: currentDate || new Date().toISOString().split("T")[0],
+            user_id: userId,
+            program_id: location.state?.programId || selectedProgramId || "N/A",
+          });
+        }
+      });
+    });
+
+    if (logEntries.length === 0) {
+      if (toast) {
+        toast({
+          title: "No data to save",
+          description: "Please enter weight and reps for at least one set.",
+          status: "warning",
+          duration: 3000,
+          isClosable: true,
+        });
+      }
+      setSaving(false);
+      return;
+    }
+
+    const { error } = await supabase.from("Workout_Daily_Log").insert(logEntries);
+    if (error) throw error;
+
+    if (toast) {
+      toast({
+        title: "Workout saved!",
+        description: "Your workout has been logged successfully",
+        status: "success",
+        duration: 3000,
+        isClosable: true,
+      });
+    }
+
+    setTimeout(() => {
+      setLogs([]);
+      onUpdateExercises([]);
+      navigate("/"); // Redirect to dashboard after saving
+    }, 2000);
+  } catch (err) {
+    setError(err.message || "Failed to save workout logs");
+    if (toast) {
+      toast({
+        title: "Error saving workout",
+        description: err.message,
+        status: "error",
+        duration: 5000,
+        isClosable: true,
+      });
+    }
+  } finally {
+    setSaving(false);
+  }
+};
+
+// Clean up timer on unmount
+useEffect(() => {
+  return () => {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+    }
+  };
+}, [timerInterval]);
+
+// Workout statistics
+const workoutStats = {
+  totalExercises: logs.length,
+  completedSets: logs.reduce((acc, log) => acc + log.sets.filter(set => set.completed).length, 0),
+  totalSets: logs.reduce((acc, log) => acc + log.sets.length, 0),
+  totalVolume: logs.reduce((acc, log) => 
+    acc + log.sets.reduce((setAcc, set) => 
+      setAcc + (parseFloat(set.weight) || 0) * (parseInt(set.reps) || 0), 0
+    ), 0
+  ),
+};
+
+// Loading state
+if (loading) {
+  return (
+    <Container maxW={{ base: "full", md: "4xl" }} centerContent pt={8}>
+      <VStack spacing={4}>
+        <Spinner size="xl" color="teal.500" thickness="4px" />
+        <Text>Loading workout...</Text>
+      </VStack>
+    </Container>
+  );
+}
+
+// Error state
+if (error) {
+  return (
+    <Container maxW={{ base: "full", md: "4xl" }} p={4}>
       <Alert status="error" mt={4}>
         <AlertIcon />
         {error}
       </Alert>
-    );
-  }
+    </Container>
+  );
+}
 
-  if (successMessage) {
-    return (
+// Success message state
+if (successMessage) {
+  return (
+    <Container maxW={{ base: "full", md: "4xl" }} p={4}>
       <Alert status="success" mt={4}>
         <AlertIcon />
         {successMessage}
       </Alert>
-    );
-  }
+    </Container>
+  );
+}
 
-  return (
-    <Box
-      mt={6}
-      p={{ base: 2, md: 4 }}
-      bg="gray.50"
-      borderRadius="md"
-      maxW="100%"
-    >
-      {/* Header with Back Button */}
-      <Flex align="center" justify="space-between" mb={4}>
-        <Flex align="center">
+return (
+  <Container maxW={{ base: "full", md: "4xl" }} p={0} minH="100vh" bg="gray.50">
+    {/* Header */}
+    <Box bg="white" shadow="sm" position="sticky" top={0} zIndex={10}>
+      <Flex align="center" justify="space-between" p={4}>
+        <HStack>
           <IconButton
             icon={<ArrowBackIcon />}
-            colorScheme="teal"
-            size="md"
+            variant="ghost"
             onClick={() => navigate("/")}
-            aria-label="Back to Dashboard"
-            mr={3}
+            aria-label="Back to dashboard"
           />
-          <Heading size="md">Daily Workout Log</Heading>
-        </Flex>
+          <VStack align="start" spacing={0}>
+            <Heading size={{ base: "sm", md: "md" }} color="gray.800">
+              Daily Workout
+            </Heading>
+            <Text fontSize="sm" color="gray.600">
+              {new Date(currentDate).toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'short', 
+                day: 'numeric' 
+              })}
+            </Text>
+          </VStack>
+        </HStack>
+        
+        <HStack spacing={2}>
+          {/* Add Exercise Button */}
+          <Button
+            leftIcon={<AddIcon />}
+            size="sm"
+            colorScheme="teal"
+            variant="outline"
+            onClick={onSearchModalOpen}
+          >
+            {isMobile ? "" : "Add Exercise"}
+          </Button>
+          
+          {/* Date Input */}
+          <Input
+            type="date"
+            value={currentDate}
+            onChange={(e) => setCurrentDate(e.target.value)}
+            size="sm"
+            w="auto"
+            bg="gray.50"
+          />
+        </HStack>
       </Flex>
 
-      <Box mb={4}>
-        <Text mb={2}>Log Details:</Text>
-        <Flex gap={2} wrap="wrap" direction={{ base: "column", md: "row" }}>
-          <FormControl width={{ base: "full", md: "200px" }}>
-            <FormLabel fontSize={{ base: "sm", md: "md" }}>Date</FormLabel>
-            <Input
-              type="date"
-              value={currentDate}
-              onChange={(e) => setCurrentDate(e.target.value)}
-              size={{ base: "md", md: "sm" }}
-            />
-          </FormControl>
-          <FormControl width={{ base: "full", md: "200px" }}>
-            <FormLabel fontSize={{ base: "sm", md: "md" }}>
-              Program Name
-            </FormLabel>
-            <Input
-              value={programDetails.program_name}
-              onChange={(e) =>
-                handleProgramDetailsChange("program_name", e.target.value)
-              }
-              size={{ base: "md", md: "sm" }}
-            />
-          </FormControl>
-          <FormControl width={{ base: "full", md: "200px" }}>
-            <FormLabel fontSize={{ base: "sm", md: "md" }}>
-              Macro Cycle
-            </FormLabel>
-            <Input
-              value={programDetails.program_macro_cycle}
-              onChange={(e) =>
-                handleProgramDetailsChange(
-                  "program_macro_cycle",
-                  e.target.value
-                )
-              }
-              size={{ base: "md", md: "sm" }}
-            />
-          </FormControl>
-          <FormControl width={{ base: "full", md: "100px" }}>
-            <FormLabel fontSize={{ base: "sm", md: "md" }}>Week</FormLabel>
-            <Input
-              value={programDetails.week}
-              onChange={(e) =>
-                handleProgramDetailsChange("week", e.target.value)
-              }
-              size={{ base: "md", md: "sm" }}
-            />
-          </FormControl>
-          <FormControl width={{ base: "full", md: "100px" }}>
-            <FormLabel fontSize={{ base: "sm", md: "md" }}>Day</FormLabel>
-            <Input
-              value={programDetails.day}
-              onChange={(e) =>
-                handleProgramDetailsChange("day", e.target.value)
-              }
-              size={{ base: "md", md: "sm" }}
-            />
-          </FormControl>
-          <FormControl width={{ base: "full", md: "200px" }}>
-            <FormLabel fontSize={{ base: "sm", md: "md" }}>Focus</FormLabel>
-            <Select
-              value={programDetails.focus}
-              onChange={(e) =>
-                handleProgramDetailsChange("focus", e.target.value)
-              }
-              size={{ base: "md", md: "sm" }}
-              placeholder="Select focus"
-            >
-              <option value="Power (Speed x Force)">
-                Power (Speed x Force)
-              </option>
-              <option value="Strength">Strength</option>
-              <option value="Hypertrophy (Muscle Growth)">
-                Hypertrophy (Muscle Growth)
-              </option>
-              <option value="Muscular Endurance">Muscular Endurance</option>
-              <option value="Maximal Aerobic Output (VO2 Max)">
-                Maximal Aerobic Output (VO2 Max)
-              </option>
-              <option value="Long Duration Steady State Exercise">
-                Long Duration Steady State Exercise
-              </option>
-              <option value="Mobility, Stability, Yoga">
-                Mobility, Stability, Yoga
-              </option>
-              <option value="Other">Other</option>
-            </Select>
-          </FormControl>
-        </Flex>
-      </Box>
-      {logs.length > 0 ? (
-        logs.map((log, exerciseIndex) => (
-          <Box
-            key={exerciseIndex}
-            mb={6}
-            p={{ base: 2, md: 3 }}
-            bg="white"
-            borderRadius="md"
-            boxShadow="sm"
-          >
-            <Flex justify="space-between" align="center" mb={2}>
-              <Heading
-                size="sm"
-                onClick={() => openDetailsModal(exerciseIndex)}
-                cursor="pointer"
-                _hover={{ color: "teal.500" }}
-              >
-                {log.exercise}
-              </Heading>
-              <HStack spacing={2}>
-                <IconButton
-                  icon={<EditIcon />}
-                  colorScheme="blue"
+      {/* Program Details - Collapsible */}
+      {programDetails.program_name && (
+        <Collapse in={!!programDetails.program_name}>
+          <Box px={4} pb={2}>
+            <Text fontSize="xs" color="gray.600" mb={2}>Program Details:</Text>
+            <Flex gap={2} wrap="wrap" direction={{ base: "column", md: "row" }}>
+              <FormControl width={{ base: "full", md: "200px" }} size="sm">
+                <FormLabel fontSize="xs">Program Name</FormLabel>
+                <Input
+                  value={programDetails.program_name}
+                  onChange={(e) => handleProgramDetailsChange("program_name", e.target.value)}
                   size="sm"
-                  onClick={() => openChangeExercise(exerciseIndex)}
-                  aria-label="Change Exercise"
+                  bg="white"
                 />
-                <IconButton
-                  icon={<DeleteIcon />}
-                  colorScheme="red"
+              </FormControl>
+              <FormControl width={{ base: "full", md: "150px" }} size="sm">
+                <FormLabel fontSize="xs">Macro Cycle</FormLabel>
+                <Input
+                  value={programDetails.program_macro_cycle}
+                  onChange={(e) => handleProgramDetailsChange("program_macro_cycle", e.target.value)}
                   size="sm"
-                  onClick={() => deleteExercise(exerciseIndex)}
-                  aria-label="Delete Exercise"
+                  bg="white"
                 />
-              </HStack>
+              </FormControl>
+              <FormControl width={{ base: "full", md: "80px" }} size="sm">
+                <FormLabel fontSize="xs">Week</FormLabel>
+                <Input
+                  value={programDetails.week}
+                  onChange={(e) => handleProgramDetailsChange("week", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              <FormControl width={{ base: "full", md: "80px" }} size="sm">
+                <FormLabel fontSize="xs">Day</FormLabel>
+                <Input
+                  value={programDetails.day}
+                  onChange={(e) => handleProgramDetailsChange("day", e.target.value)}
+                  size="sm"
+                  bg="white"
+                />
+              </FormControl>
+              <FormControl width={{ base: "full", md: "200px" }} size="sm">
+                <FormLabel fontSize="xs">Focus</FormLabel>
+                <Select
+                  value={programDetails.focus}
+                  onChange={(e) => handleProgramDetailsChange("focus", e.target.value)}
+                  size="sm"
+                  bg="white"
+                  placeholder="Select focus"
+                >
+                  <option value="Power (Speed x Force)">Power (Speed x Force)</option>
+                  <option value="Strength">Strength</option>
+                  <option value="Hypertrophy (Muscle Growth)">Hypertrophy (Muscle Growth)</option>
+                  <option value="Muscular Endurance">Muscular Endurance</option>
+                  <option value="Maximal Aerobic Output (VO2 Max)">Maximal Aerobic Output (VO2 Max)</option>
+                  <option value="Long Duration Steady State Exercise">Long Duration Steady State Exercise</option>
+                  <option value="Mobility, Stability, Yoga">Mobility, Stability, Yoga</option>
+                  <option value="Other">Other</option>
+                </Select>
+              </FormControl>
             </Flex>
-            {previousData[log.exercise] && (
-              <Text fontSize={{ base: "xs", md: "sm" }} color="gray.600" mb={2}>
-                Last: {previousData[log.exercise]["weight_kg"]}kg x{" "}
-                {previousData[log.exercise].reps}
-                {previousData[log.exercise].rpe
-                  ? ` (RPE: ${previousData[log.exercise].rpe})`
-                  : ""}
-              </Text>
-            )}
-            <Box mb={3}>
-              <Text fontSize={{ base: "xs", md: "sm" }} mb={1}>
-                Exercise Details (Editable):
-              </Text>
-              <Flex
-                gap={2}
-                wrap="wrap"
-                direction={{ base: "column", md: "row" }}
-              >
-                <FormControl width={{ base: "full", md: "100px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Superset
-                  </FormLabel>
-                  <Select
-                    value={log.superset || ""}
-                    onChange={(e) =>
-                      handleSupersetChange(exerciseIndex, e.target.value)
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  >
-                    <option value="">None</option>
-                    <option value="Y">Y</option>
-                    <option value="N">N</option>
-                  </Select>
-                </FormControl>
-                <FormControl width={{ base: "full", md: "150px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    %1RM
-                  </FormLabel>
-                  <Input
-                    value={log.load_prescription}
-                    onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "load_prescription",
-                        e.target.value
-                      )
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  />
-                </FormControl>
-                <FormControl width={{ base: "full", md: "150px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Calc. Target Load
-                  </FormLabel>
-                  <Input
-                    value={log.calculated_target_load}
-                    onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "calculated_target_load",
-                        e.target.value
-                      )
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  />
-                </FormControl>
-                <FormControl width={{ base: "full", md: "100px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Target Reps
-                  </FormLabel>
-                  <Input
-                    value={log.target_reps}
-                    onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "target_reps",
-                        e.target.value
-                      )
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  />
-                </FormControl>
-                <FormControl width={{ base: "full", md: "80px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Rest
-                  </FormLabel>
-                  <Input
-                    value={log.rest}
-                    onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "rest",
-                        e.target.value
-                      )
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  />
-                </FormControl>
-                <FormControl width={{ base: "full", md: "80px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Tempo
-                  </FormLabel>
-                  <Input
-                    value={log.tempo}
-                    onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "tempo",
-                        e.target.value
-                      )
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  />
-                </FormControl>
-                <FormControl width={{ base: "full", md: "120px" }}>
-                  <FormLabel fontSize={{ base: "xs", md: "sm" }}>
-                    Time/Distance
-                  </FormLabel>
-                  <Input
-                    value={log.time_distance}
-                    onChange={(e) =>
-                      handleInputChange(
-                        exerciseIndex,
-                        -1,
-                        "time_distance",
-                        e.target.value
-                      )
-                    }
-                    size={{ base: "md", md: "xs" }}
-                  />
-                </FormControl>
-              </Flex>
-            </Box>
-            {isMobile ? (
-              <VStack spacing={3} align="stretch" mb={2}>
-                {log.sets.map((set, setIndex) => (
-                  <Box
-                    key={setIndex}
-                    p={2}
-                    border="1px solid"
-                    borderColor="gray.200"
-                    borderRadius="md"
-                  >
-                    <Flex justify="space-between" align="center" mb={1}>
-                      <Text fontWeight="bold">Set {setIndex + 1}</Text>
-                      {log.sets.length > 1 && (
-                        <IconButton
-                          icon={<DeleteIcon />}
-                          colorScheme="red"
-                          size="xs"
-                          onClick={() => deleteSet(exerciseIndex, setIndex)}
-                          aria-label="Delete Set"
-                        />
-                      )}
-                    </Flex>
-                    <Flex direction="column" gap={2}>
-                      <FormControl>
-                        <FormLabel fontSize="xs">Weight (kg)</FormLabel>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          value={set.weight || ""}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "weight",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          bg={
-                            getPerformanceStatus(
-                              log.exercise,
-                              set.weight,
-                              set.reps
-                            ).color
-                          }
-                          placeholder="Enter weight"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs">Reps</FormLabel>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={set.reps || ""}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "reps",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          bg={
-                            getPerformanceStatus(
-                              log.exercise,
-                              set.weight,
-                              set.reps
-                            ).color
-                          }
-                          placeholder="Enter reps"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs">RPE (1-10)</FormLabel>
-                        <Input
-                          type="text"
-                          inputMode="decimal"
-                          value={set.rpe || ""}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "rpe",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          bg="gray.50"
-                          placeholder="Enter RPE"
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <Flex align="center" justify="space-between">
-                          <Flex align="center">
-                            <Checkbox
-                              isChecked={set.completed}
-                              onChange={(e) =>
-                                handleSetCompletion(
-                                  exerciseIndex,
-                                  setIndex,
-                                  e.target.checked
-                                )
-                              }
-                              size="md"
-                              mr={2}
-                            />
-                            <FormLabel fontSize="xs" mb={0}>
-                              Done
-                            </FormLabel>
-                          </Flex>
-
-                          {/* Timer Display and Controls */}
-                          {isTimerActiveForSet(exerciseIndex, setIndex) && (
-                            <Flex align="center" gap={2}>
-                              <Text
-                                fontSize="xs"
-                                fontWeight="bold"
-                                color="green.600"
-                              >
-                                {formatTime(timerSeconds)}
-                              </Text>
-                              <Button
-                                size="xs"
-                                colorScheme="red"
-                                onClick={() => {
-                                  const restTime = stopTimer();
-                                  if (restTime) {
-                                    alert(`Rest time recorded: ${restTime}`);
-                                  }
-                                }}
-                              >
-                                Stop
-                              </Button>
-                            </Flex>
-                          )}
-                        </Flex>
-                      </FormControl>
-
-                      {/* Rest Time Field - Enhanced with timer integration */}
-                      <FormControl>
-                        <FormLabel fontSize="xs">Rest Time</FormLabel>
-                        <Input
-                          value={set.rest || ""}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "rest",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          placeholder={
-                            isTimerActiveForSet(exerciseIndex, setIndex)
-                              ? "Timer running..."
-                              : "Enter rest time"
-                          }
-                          bg={
-                            isTimerActiveForSet(exerciseIndex, setIndex)
-                              ? "green.50"
-                              : "gray.50"
-                          }
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel fontSize="xs">Notes</FormLabel>
-                        <Textarea
-                          value={set.notes || ""}
-                          onChange={(e) =>
-                            handleInputChange(
-                              exerciseIndex,
-                              setIndex,
-                              "notes",
-                              e.target.value
-                            )
-                          }
-                          size="md"
-                          rows={2}
-                          placeholder="Add notes"
-                        />
-                      </FormControl>
-                      <Text
-                        fontSize="xs"
-                        color={
-                          getPerformanceStatus(
-                            log.exercise,
-                            set.weight,
-                            set.reps
-                          ).color !== "gray.50"
-                            ? getPerformanceStatus(
-                                log.exercise,
-                                set.weight,
-                                set.reps
-                              ).color.replace(".100", ".700")
-                            : "gray.500"
-                        }
-                      >
-                        {
-                          getPerformanceStatus(
-                            log.exercise,
-                            set.weight,
-                            set.reps
-                          ).message
-                        }
-                      </Text>
-                    </Flex>
-                  </Box>
-                ))}
-              </VStack>
-            ) : (
-              <Table variant="simple" size="sm" mb={2}>
-                <Tbody>
-                  {log.sets.map((set, setIndex) => {
-                    const status = getPerformanceStatus(
-                      log.exercise,
-                      set.weight,
-                      set.reps
-                    );
-                    return (
-                      <Tr key={setIndex}>
-                        <Td width="10%">
-                          <Flex align="center">
-                            Set {setIndex + 1}
-                            {log.sets.length > 1 && (
-                              <IconButton
-                                icon={<DeleteIcon />}
-                                colorScheme="red"
-                                size="xs"
-                                ml={2}
-                                onClick={() =>
-                                  deleteSet(exerciseIndex, setIndex)
-                                }
-                                aria-label="Delete Set"
-                              />
-                            )}
-                          </Flex>
-                        </Td>
-                        <Td width="15%">
-                          <Input
-                            placeholder="Weight (kg)"
-                            type="number"
-                            value={set.weight}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "weight",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg={status.color}
-                          />
-                        </Td>
-                        <Td width="12%">
-                          <Input
-                            placeholder="Reps"
-                            type="number"
-                            value={set.reps}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "reps",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg={status.color}
-                          />
-                        </Td>
-                        <Td width="10%">
-                          <Input
-                            placeholder="RPE (1-10)"
-                            type="number"
-                            value={set.rpe}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "rpe",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg="gray.50"
-                          />
-                        </Td>
-                        <Td width="15%">
-                          <VStack spacing={1}>
-                            <Flex align="center">
-                              <Checkbox
-                                isChecked={set.completed}
-                                onChange={(e) =>
-                                  handleSetCompletion(
-                                    exerciseIndex,
-                                    setIndex,
-                                    e.target.checked
-                                  )
-                                }
-                                size="md"
-                                mr={2}
-                              />
-                              <Text fontSize="sm">Done</Text>
-                            </Flex>
-
-                            {/* Timer Display */}
-                            {isTimerActiveForSet(exerciseIndex, setIndex) && (
-                              <Flex align="center" gap={1}>
-                                <Text
-                                  fontSize="xs"
-                                  fontWeight="bold"
-                                  color="green.600"
-                                >
-                                  {formatTime(timerSeconds)}
-                                </Text>
-                                <Button
-                                  size="xs"
-                                  colorScheme="red"
-                                  onClick={() => {
-                                    const restTime = stopTimer();
-                                    if (restTime) {
-                                      alert(`Rest time recorded: ${restTime}`);
-                                    }
-                                  }}
-                                >
-                                  Stop
-                                </Button>
-                              </Flex>
-                            )}
-                          </VStack>
-                        </Td>
-                        <Td width="25%">
-                          <Textarea
-                            placeholder="Notes"
-                            value={set.notes}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "notes",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            rows={1}
-                          />
-                        </Td>
-                        <Td width="15%">
-                          <Input
-                            placeholder="Rest time"
-                            value={set.rest || ""}
-                            onChange={(e) =>
-                              handleInputChange(
-                                exerciseIndex,
-                                setIndex,
-                                "rest",
-                                e.target.value
-                              )
-                            }
-                            size="sm"
-                            bg={
-                              isTimerActiveForSet(exerciseIndex, setIndex)
-                                ? "green.50"
-                                : "gray.50"
-                            }
-                          />
-                        </Td>
-
-                        <Td width="10%">
-                          <Text
-                            fontSize="xs"
-                            color={
-                              status.color !== "gray.50"
-                                ? status.color.replace(".100", ".700")
-                                : "gray.500"
-                            }
-                          >
-                            {status.message}
-                          </Text>
-                        </Td>
-                      </Tr>
-                    );
-                  })}
-                </Tbody>
-              </Table>
-            )}
-            <Button
-              colorScheme="gray"
-              size="sm"
-              onClick={() => addSet(exerciseIndex)}
-              mb={2}
-            >
-              Add Set
-            </Button>
           </Box>
-        ))
-      ) : (
-        <Text mt={4} mb={4} color="gray.500">
-          No exercises added yet. Add an exercise to start logging.
-        </Text>
+        </Collapse>
       )}
-      <Box mt={4}>
-        <Button
-          colorScheme="blue"
-          size="md"
-          onClick={() => {
-            setShowSearch(!showSearch);
-            setShowChangeSearchModal(false); // Close modal if open
-            setIsChangeMode(false); // Reset change mode
-          }}
-          mb={2}
-        >
-          {showSearch ? "Cancel" : "Add New Exercise"}
-        </Button>
-        {showSearch && (
-          <Box
-            mt={2}
-            p={{ base: 2, md: 3 }}
-            bg="white"
-            borderRadius="md"
-            boxShadow="md"
-          >
-            <Heading size="sm" mb={2}>
-              Add Exercise
-            </Heading>
-            <Input
-              placeholder="Search exercises by name, muscle group, equipment..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              size="md"
-              mb={2}
-              width={{ base: "full", md: "400px" }}
+
+      {/* Workout Stats */}
+      {logs.length > 0 && (
+        <Box px={4} pb={4}>
+          <SimpleGrid columns={4} spacing={2}>
+            <Stat textAlign="center" bg="teal.50" p={2} borderRadius="md">
+              <StatNumber fontSize={{ base: "md", md: "lg" }} color="teal.600">
+                {workoutStats.completedSets}
+              </StatNumber>
+              <StatLabel fontSize="xs" color="teal.600">
+                Sets Done
+              </StatLabel>
+            </Stat>
+            
+            <Stat textAlign="center" bg="blue.50" p={2} borderRadius="md">
+              <StatNumber fontSize={{ base: "md", md: "lg" }} color="blue.600">
+                {workoutStats.totalExercises}
+              </StatNumber>
+              <StatLabel fontSize="xs" color="blue.600">
+                Exercises
+              </StatLabel>
+            </Stat>
+            
+            <Stat textAlign="center" bg="purple.50" p={2} borderRadius="md">
+              <StatNumber fontSize={{ base: "md", md: "lg" }} color="purple.600">
+                {Math.round(workoutStats.totalVolume)}
+              </StatNumber>
+              <StatLabel fontSize="xs" color="purple.600">
+                Volume
+              </StatLabel>
+            </Stat>
+            
+            <Stat textAlign="center" bg="orange.50" p={2} borderRadius="md">
+              <StatNumber fontSize={{ base: "md", md: "lg" }} color="orange.600">
+                {workoutStats.totalSets > 0 ? Math.round((workoutStats.completedSets / workoutStats.totalSets) * 100) : 0}%
+              </StatNumber>
+              <StatLabel fontSize="xs" color="orange.600">
+                Progress
+              </StatLabel>
+            </Stat>
+          </SimpleGrid>
+        </Box>
+      )}
+    </Box>
+
+    {/* Exercise List */}
+    <Box px={{ base: 2, md: 4 }} py={4}>
+      {logs.length > 0 ? (
+        <VStack spacing={0}>
+          {logs.map((log, exerciseIndex) => (
+            <ExerciseCard
+              key={exerciseIndex}
+              exercise={log}
+              exerciseIndex={exerciseIndex}
+              previousData={previousData}
+              onInputChange={handleInputChange}
+              onSetCompletion={handleSetCompletion}
+              onAddSet={addSet}
+              onDeleteSet={deleteSet}
+              onDeleteExercise={deleteExercise}
+              onOpenDetails={openDetailsModal}
+              onChangeExercise={openChangeExercise}
+              activeTimer={activeTimer}
+              timerSeconds={timerSeconds}
+              onStartTimer={startTimer}
+              onStopTimer={stopTimer}
+              onSupersetChange={handleSupersetChange}
             />
-            {searchTerm && (
-              <Box
-                maxH="300px"
-                overflowY="auto"
-                bg="white"
-                borderRadius="md"
-                boxShadow="md"
-                p={2}
-                mt={-2}
-              >
-                <List spacing={1}>
-                  {filteredExercises.length === 0 && (
-                    <ListItem>
-                      <Text fontSize="sm" color="gray.500">
-                        No matching exercises found.
-                      </Text>
-                    </ListItem>
-                  )}
-                  {filteredExercises.map((ex) => (
-                    <ListItem
-                      key={ex.Exercise}
-                      p={2}
-                      borderRadius="sm"
-                      _hover={{ bg: "gray.100", cursor: "pointer" }}
-                      onClick={() => {
-                        if (isChangeMode) {
-                          replaceExercise(editExerciseIndex, ex.Exercise);
-                        } else {
-                          addExerciseToLog(ex.Exercise);
-                        }
-                      }}
-                      borderBottom="1px solid"
-                      borderColor="gray.200"
-                    >
-                      <Text fontWeight="bold" fontSize="md">
-                        {ex.Exercise}
-                      </Text>
-                      <Text fontSize="sm" color="gray.600">
-                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
-                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
-                        {ex.Mechanics || "N/A"}
-                      </Text>
-                      <Flex gap={2} mt={1}>
-                        {ex.Video_Demonstration && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex.Video_Demonstration}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Video Demo
-                          </Text>
-                        )}
-                        {ex["In-Depth_Explanation"] && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex["In-Depth_Explanation"]}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Explanation
-                          </Text>
-                        )}
-                      </Flex>
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            )}
-            <Select
-              placeholder="Or select from list"
-              size="sm"
-              mt={2}
-              width={{ base: "full", md: "400px" }}
-              onChange={(e) => {
-                if (e.target.value) {
-                  if (isChangeMode) {
-                    replaceExercise(editExerciseIndex, e.target.value);
-                  } else {
-                    addExerciseToLog(e.target.value);
-                  }
-                }
-              }}
-            >
-              {exerciseLibrary.map((ex) => (
-                <option key={ex.Exercise} value={ex.Exercise}>
-                  {ex.Exercise}
-                </option>
-              ))}
-            </Select>
-          </Box>
-        )}
-      </Box>
-      <Flex justify="center" mt={4}>
+          ))}
+        </VStack>
+      ) : (
+        <Card>
+          <CardBody textAlign="center" py={12}>
+            <Text color="gray.500" fontSize="lg" mb={4}>
+              No exercises in this workout
+            </Text>
+            <Button colorScheme="teal" onClick={onSearchModalOpen}>
+              Add Exercises
+            </Button>
+          </CardBody>
+        </Card>
+      )}
+    </Box>
+
+    {/* Save Button */}
+    {logs.length > 0 && (
+      <Box 
+        position="sticky" 
+        bottom={0} 
+        bg="white" 
+        p={4} 
+        shadow="lg"
+        borderTop="1px"
+        borderColor="gray.200"
+      >
         <Button
           colorScheme="teal"
           size="lg"
+          w="full"
           onClick={saveLogs}
           isLoading={saving}
-          w={{ base: "full", md: "auto" }}
-          isDisabled={logs.length === 0}
+          loadingText="Saving..."
+          leftIcon={<CheckIcon />}
+          borderRadius="xl"
+          py={6}
+          fontSize="lg"
+          fontWeight="bold"
         >
-          Save Workout Log
+          Complete Workout
         </Button>
-      </Flex>
-      {/* Details Modal for Exercise with PR Chart */}
-      <Modal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        size={{ base: "full", md: "6xl" }} // Made larger to accommodate chart
+      </Box>
+    )}
+
+    {/* Add Exercise Search Modal */}
+    <ExerciseSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={onSearchModalClose}
+        exerciseLibrary={exerciseLibrary}
+        onSelectExercise={addExerciseToLog}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        title="Add Exercise"
+      />
+
+      {/* Change Exercise Search Modal */}
+      <ExerciseSearchModal
+        isOpen={isChangeModalOpen}
+        onClose={onChangeModalClose}
+        exerciseLibrary={exerciseLibrary}
+        onSelectExercise={handleChangeExerciseSelect}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
+        title="Change Exercise"
+      />
+
+      {/* Exercise Details Modal with Full Analytics */}
+      <Modal 
+        isOpen={isDetailsModalOpen} 
+        onClose={() => setIsDetailsModalOpen(false)} 
+        size={{ base: "full", md: "6xl" }}
+        scrollBehavior="inside"
       >
         <ModalOverlay />
-        <ModalContent maxH="90vh" overflowY="auto">
+        <ModalContent maxH="90vh">
           <ModalHeader>
-            {selectedExerciseDetails?.exercise || "Exercise Details"}
+            <HStack justify="space-between" w="full">
+              <HStack>
+                <Text>{selectedExerciseDetails?.exercise}</Text>
+                <Badge colorScheme="blue">Exercise Analytics</Badge>
+              </HStack>
+              <HStack spacing={2}>
+                {/* Favorite Toggle */}
+                <IconButton
+                  icon={<StarIcon />}
+                  colorScheme={
+                    selectedExerciseDetails?.favorite?.toLowerCase() === "yes" || 
+                    selectedExerciseDetails?.favorite?.toLowerCase() === "y" 
+                      ? "yellow" 
+                      : "gray"
+                  }
+                  variant={
+                    selectedExerciseDetails?.favorite?.toLowerCase() === "yes" || 
+                    selectedExerciseDetails?.favorite?.toLowerCase() === "y" 
+                      ? "solid" 
+                      : "outline"
+                  }
+                  size="sm"
+                  onClick={() => toggleFavorite(
+                    selectedExerciseDetails?.exercise, 
+                    selectedExerciseDetails?.favorite
+                  )}
+                  aria-label="Toggle favorite"
+                  title={
+                    selectedExerciseDetails?.favorite?.toLowerCase() === "yes" || 
+                    selectedExerciseDetails?.favorite?.toLowerCase() === "y" 
+                      ? "Remove from favorites" 
+                      : "Add to favorites"
+                  }
+                />
+                
+                {/* Edit Toggle */}
+                <IconButton
+                  icon={<EditIcon />}
+                  colorScheme={isEditMode ? "blue" : "gray"}
+                  variant={isEditMode ? "solid" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    if (!isEditMode) {
+                      setEditingExercise({ ...selectedExerciseDetails });
+                    }
+                    setIsEditMode(!isEditMode);
+                  }}
+                  aria-label="Toggle edit mode"
+                  title={isEditMode ? "Cancel editing" : "Edit exercise details"}
+                />
+              </HStack>
+            </HStack>
           </ModalHeader>
           <ModalCloseButton />
           <ModalBody>
-            {/* Error and Success Messages */}
-            {error && (
-              <Alert status="error" mb={4}>
-                <AlertIcon />
-                {error}
-              </Alert>
-            )}
-            {successMessage && (
-              <Alert status="success" mb={4}>
-                <AlertIcon />
-                {successMessage}
-              </Alert>
-            )}
-
             {selectedExerciseDetails && (
-              <VStack spacing={6} align="stretch">
-                {/* Exercise Basic Info */}
-                <Box>
-                  <Text fontWeight="bold" fontSize="lg" mb={3}>
-                    Exercise: {selectedExerciseDetails.exercise}
-                  </Text>
+              <Tabs variant="enclosed" colorScheme="teal">
+                <TabList>
+                  <Tab>📊 Analytics</Tab>
+                  <Tab>📋 Details</Tab>
+                  <Tab>📈 Progress Charts</Tab>
+                </TabList>
 
-                  {isEditMode && editingExercise ? (
-                    <>
-                      <FormControl>
-                        <FormLabel>Target Muscle Group</FormLabel>
-                        <Input
-                          value={editingExercise.targetMuscleGroup}
-                          onChange={(e) =>
-                            handleEditFieldChange(
-                              "targetMuscleGroup",
-                              e.target.value
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>Video Demonstration Link</FormLabel>
-                        <Input
-                          value={editingExercise.videoDemonstration}
-                          onChange={(e) =>
-                            handleEditFieldChange(
-                              "videoDemonstration",
-                              e.target.value
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>In-Depth Explanation Link</FormLabel>
-                        <Input
-                          value={editingExercise.inDepthExplanation}
-                          onChange={(e) =>
-                            handleEditFieldChange(
-                              "inDepthExplanation",
-                              e.target.value
-                            )
-                          }
-                        />
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>Favorite</FormLabel>
-                        <Select
-                          value={editingExercise.favorite || ""}
-                          onChange={(e) =>
-                            handleEditFieldChange("favorite", e.target.value)
-                          }
-                        >
-                          <option value="">None</option>
-                          <option value="Yes">Yes</option>
-                          <option value="No">No</option>
-                        </Select>
-                      </FormControl>
-                      <FormControl>
-                        <FormLabel>1 RM Alex (kg)</FormLabel>
-                        <Input
-                          type="text"
-                          value={
-                            editingExercise.oneRmAlex === null ||
-                            editingExercise.oneRmAlex === undefined
-                              ? ""
-                              : String(editingExercise.oneRmAlex)
-                          }
-                          onChange={(e) =>
-                            handleEditFieldChange("oneRmAlex", e.target.value)
-                          }
-                          placeholder="Enter weight in kg or N/A"
-                        />
-                      </FormControl>
-                    </>
-                  ) : (
-                    <Grid
-                      templateColumns={{ base: "1fr", md: "repeat(2, 1fr)" }}
-                      gap={4}
-                    >
-                      <Text>
-                        <strong>Target Muscle:</strong>{" "}
-                        {selectedExerciseDetails.targetMuscleGroup}
-                      </Text>
-                      <Text>
-                        <strong>Favorite:</strong>{" "}
-                        {selectedExerciseDetails.favorite || "N/A"}
-                      </Text>
-                      <Text>
-                        <strong>1 RM (Alex):</strong>{" "}
-                        {selectedExerciseDetails.oneRmAlex} kg
-                      </Text>
-                      {selectedExerciseDetails.videoDemonstration && (
-                        <Text>
-                          <strong>Video Demo:</strong>
-                          <Link
-                            href={selectedExerciseDetails.videoDemonstration}
-                            color="blue.500"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            ml={1}
-                          >
-                            Watch Here
-                          </Link>
-                        </Text>
+                <TabPanels>
+                  {/* Analytics Tab */}
+                  <TabPanel>
+                    <VStack spacing={6} align="stretch">
+                      {/* Exercise Statistics */}
+                      <ExerciseStats 
+                        prData={prData} 
+                        exerciseDetails={selectedExerciseDetails} 
+                      />
+
+                      {/* Quick Stats Grid */}
+                      <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
+                        <Stat bg="gray.50" p={4} borderRadius="lg" textAlign="center">
+                          <StatLabel fontSize="xs" color="gray.600">Target Muscle</StatLabel>
+                          <StatNumber fontSize="md" color="gray.700">
+                            {selectedExerciseDetails.targetMuscleGroup}
+                          </StatNumber>
+                        </Stat>
+                        
+                        <Stat bg="gray.50" p={4} borderRadius="lg" textAlign="center">
+                          <StatLabel fontSize="xs" color="gray.600">Equipment</StatLabel>
+                          <StatNumber fontSize="md" color="gray.700">
+                            {selectedExerciseDetails.primaryEquipment}
+                          </StatNumber>
+                        </Stat>
+                        
+                        <Stat bg="gray.50" p={4} borderRadius="lg" textAlign="center">
+                          <StatLabel fontSize="xs" color="gray.600">Mechanics</StatLabel>
+                          <StatNumber fontSize="md" color="gray.700">
+                            {selectedExerciseDetails.mechanics}
+                          </StatNumber>
+                        </Stat>
+                        
+                        <Stat bg="gray.50" p={4} borderRadius="lg" textAlign="center">
+                          <StatLabel fontSize="xs" color="gray.600">Force Type</StatLabel>
+                          <StatNumber fontSize="md" color="gray.700">
+                            {selectedExerciseDetails.forceType}
+                          </StatNumber>
+                        </Stat>
+                      </SimpleGrid>
+
+                      {/* Recent Performance */}
+                      {prData.length > 0 && (
+                        <Box>
+                          <Heading size="sm" mb={4}>Recent Performance</Heading>
+                          <SimpleGrid columns={1} spacing={3}>
+                            {prData.slice(-5).reverse().map((session, index) => (
+                              <Box key={index} p={3} bg="gray.50" borderRadius="md">
+                                <HStack justify="space-between">
+                                  <VStack align="start" spacing={1}>
+                                    <Text fontSize="sm" fontWeight="bold">
+                                      {new Date(session.date).toLocaleDateString()}
+                                    </Text>
+                                    <Text fontSize="xs" color="gray.600">
+                                      {session.maxWeight}kg × {session.bestReps} reps
+                                    </Text>
+                                  </VStack>
+                                  <VStack align="end" spacing={1}>
+                                    <Badge colorScheme="teal">
+                                      {session.estimated1RM}kg 1RM
+                                    </Badge>
+                                    <Text fontSize="xs" color="gray.600">
+                                      Volume: {Math.round(session.totalVolume)}
+                                    </Text>
+                                  </VStack>
+                                </HStack>
+                              </Box>
+                            ))}
+                          </SimpleGrid>
+                        </Box>
                       )}
-                    </Grid>
-                  )}
-                </Box>
+                    </VStack>
+                  </TabPanel>
 
-                {/* PR Progression Chart */}
-                {!isEditMode && (
-                  <Box>
-                    <Heading size="md" mb={4} color="teal.600">
-                      💪 Strength Progression Analysis
-                    </Heading>
+                  {/* Details Tab */}
+                  <TabPanel>
+                    <VStack spacing={6} align="stretch">
+                      {/* Basic Exercise Info */}
+                      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+                        <FormControl>
+                          <FormLabel>Target Muscle Group</FormLabel>
+                          {isEditMode ? (
+                            <Input
+                              value={editingExercise?.targetMuscleGroup || ""}
+                              onChange={(e) => handleEditFieldChange("targetMuscleGroup", e.target.value)}
+                            />
+                          ) : (
+                            <Text p={2} bg="gray.50" borderRadius="md">
+                              {selectedExerciseDetails.targetMuscleGroup}
+                            </Text>
+                          )}
+                        </FormControl>
+                        
+                        <FormControl>
+                          <FormLabel>1RM (Alex)</FormLabel>
+                          {isEditMode ? (
+                            <Input
+                              value={editingExercise?.oneRmAlex || ""}
+                              onChange={(e) => handleEditFieldChange("oneRmAlex", e.target.value)}
+                              placeholder="Enter 1RM or N/A"
+                            />
+                          ) : (
+                            <Text p={2} bg="gray.50" borderRadius="md">
+                              {selectedExerciseDetails.oneRmAlex}
+                            </Text>
+                          )}
+                        </FormControl>
 
-                    {loadingPrData ? (
-                      <Flex justify="center" align="center" h="300px">
-                        <Spinner size="lg" color="teal.500" />
-                        <Text ml={3}>Loading your PR data...</Text>
-                      </Flex>
-                    ) : prError ? (
-                      <Alert status="error">
-                        <AlertIcon />
-                        {prError}
-                      </Alert>
-                    ) : prData.length === 0 ? (
-                      <Alert status="info">
-                        <AlertIcon />
-                        No workout history found for this exercise. Complete
-                        some workouts to see your progression!
-                      </Alert>
-                    ) : (
-                      <VStack spacing={4} align="stretch">
-                        {/* Key Stats Summary */}
-                        <Grid
-                          templateColumns={{
-                            base: "repeat(2, 1fr)",
-                            md: "repeat(4, 1fr)",
-                          }}
-                          gap={4}
-                        >
-                          <Box
-                            bg="blue.50"
-                            p={3}
-                            borderRadius="md"
-                            textAlign="center"
-                          >
-                            <Text
-                              fontSize="sm"
-                              color="blue.600"
-                              fontWeight="bold"
-                            >
-                              Current 1RM Est.
-                            </Text>
-                            <Text fontSize="xl" fontWeight="bold">
-                              {prData[prData.length - 1]?.estimated1RM || 0} kg
-                            </Text>
-                          </Box>
-                          <Box
-                            bg="green.50"
-                            p={3}
-                            borderRadius="md"
-                            textAlign="center"
-                          >
-                            <Text
-                              fontSize="sm"
-                              color="green.600"
-                              fontWeight="bold"
-                            >
-                              Max Weight
-                            </Text>
-                            <Text fontSize="xl" fontWeight="bold">
-                              {Math.max(...prData.map((d) => d.maxWeight))} kg
-                            </Text>
-                          </Box>
-                          <Box
-                            bg="purple.50"
-                            p={3}
-                            borderRadius="md"
-                            textAlign="center"
-                          >
-                            <Text
-                              fontSize="sm"
-                              color="purple.600"
-                              fontWeight="bold"
-                            >
-                              Best Volume Day
-                            </Text>
-                            <Text fontSize="xl" fontWeight="bold">
-                              {Math.max(...prData.map((d) => d.totalVolume))} kg
-                            </Text>
-                          </Box>
-                          <Box
-                            bg="orange.50"
-                            p={3}
-                            borderRadius="md"
-                            textAlign="center"
-                          >
-                            <Text
-                              fontSize="sm"
-                              color="orange.600"
-                              fontWeight="bold"
-                            >
-                              Workouts
-                            </Text>
-                            <Text fontSize="xl" fontWeight="bold">
-                              {prData.length}
-                            </Text>
-                          </Box>
-                        </Grid>
-
-                        {/* Main PR Chart */}
-                        <Box bg="white" p={4} borderRadius="md" boxShadow="sm">
-                          <Text fontWeight="bold" mb={3}>
-                            Strength Progression Over Time
+                        <FormControl>
+                          <FormLabel>Primary Equipment</FormLabel>
+                          <Text p={2} bg="gray.50" borderRadius="md">
+                            {selectedExerciseDetails.primaryEquipment}
                           </Text>
-                          <ResponsiveContainer width="100%" height={400}>
-                            <LineChart data={prData}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis
-                                dataKey="formattedDate"
-                                tick={{ fontSize: 12 }}
-                              />
-                              <YAxis
-                                label={{
-                                  value: "Weight (kg)",
-                                  angle: -90,
-                                  position: "insideLeft",
-                                }}
-                              />
-                              <Tooltip
-                                labelFormatter={(value, payload) => {
-                                  if (payload && payload[0]) {
-                                    const data = payload[0].payload;
-                                    return `Date: ${data.date}`;
-                                  }
-                                  return value;
-                                }}
-                                formatter={(value, name, props) => {
-                                  const data = props.payload;
-                                  if (name === "maxWeight") {
-                                    return [
-                                      `${value} kg (${data.bestReps} reps)`,
-                                      "Max Weight",
-                                    ];
-                                  }
-                                  if (name === "estimated1RM") {
-                                    return [`${value} kg`, "Estimated 1RM"];
-                                  }
-                                  return [value, name];
-                                }}
-                              />
-                              <Legend />
-                              <Line
-                                type="monotone"
-                                dataKey="maxWeight"
-                                stroke="#3182ce"
-                                strokeWidth={3}
-                                dot={{ fill: "#3182ce", strokeWidth: 2, r: 4 }}
-                                name="Max Weight"
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="estimated1RM"
-                                stroke="#38a169"
-                                strokeWidth={2}
-                                strokeDasharray="5 5"
-                                dot={{ fill: "#38a169", strokeWidth: 2, r: 3 }}
-                                name="Est. 1RM"
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </Box>
+                        </FormControl>
 
-                        {/* Volume Progression Chart */}
-                        <Box bg="white" p={4} borderRadius="md" boxShadow="sm">
-                          <Text fontWeight="bold" mb={3}>
-                            Training Volume Progression
-                          </Text>
-                          <ResponsiveContainer width="100%" height={250}>
-                            <LineChart data={prData}>
-                              <CartesianGrid strokeDasharray="3 3" />
-                              <XAxis
-                                dataKey="formattedDate"
-                                tick={{ fontSize: 12 }}
+                        <FormControl>
+                          <FormLabel>
+                            <HStack>
+                              <Text>Favorite</Text>
+                              <Switch
+                                isChecked={
+                                  selectedExerciseDetails.favorite?.toLowerCase() === "yes" || 
+                                  selectedExerciseDetails.favorite?.toLowerCase() === "y"
+                                }
+                                onChange={(e) => toggleFavorite(
+                                  selectedExerciseDetails.exercise, 
+                                  selectedExerciseDetails.favorite
+                                )}
+                                colorScheme="yellow"
                               />
-                              <YAxis
-                                label={{
-                                  value: "Volume (kg)",
-                                  angle: -90,
-                                  position: "insideLeft",
-                                }}
-                              />
-                              <Tooltip
-                                formatter={(value) => [
-                                  `${value} kg`,
-                                  "Total Volume",
-                                ]}
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="totalVolume"
-                                stroke="#805ad5"
-                                strokeWidth={2}
-                                dot={{ fill: "#805ad5", strokeWidth: 2, r: 3 }}
-                              />
-                            </LineChart>
-                          </ResponsiveContainer>
-                        </Box>
+                            </HStack>
+                          </FormLabel>
+                        </FormControl>
+                      </SimpleGrid>
 
-                        {/* Training Insights */}
-                        <Box bg="gray.50" p={4} borderRadius="md">
-                          <Text fontWeight="bold" mb={2}>
-                            🎯 Training Insights
+                      {/* Video Demonstration */}
+                      {selectedExerciseDetails.videoDemonstration && (
+                        <FormControl>
+                          <FormLabel>Video Demonstration</FormLabel>
+                          {isEditMode ? (
+                            <Input
+                              value={editingExercise?.videoDemonstration || ""}
+                              onChange={(e) => handleEditFieldChange("videoDemonstration", e.target.value)}
+                              placeholder="Enter video URL"
+                            />
+                          ) : (
+                            <Link 
+                              href={selectedExerciseDetails.videoDemonstration} 
+                              isExternal 
+                              color="teal.500"
+                              p={2} 
+                              bg="gray.50" 
+                              borderRadius="md" 
+                              display="block"
+                            >
+                              {selectedExerciseDetails.videoDemonstration}
+                            </Link>
+                          )}
+                        </FormControl>
+                      )}
+
+                      {/* In-Depth Explanation */}
+                      <FormControl>
+                        <FormLabel>Exercise Explanation</FormLabel>
+                        {isEditMode ? (
+                          <Textarea
+                            value={editingExercise?.inDepthExplanation || ""}
+                            onChange={(e) => handleEditFieldChange("inDepthExplanation", e.target.value)}
+                            placeholder="Enter exercise explanation"
+                            rows={6}
+                          />
+                        ) : (
+                          <Text p={3} bg="gray.50" borderRadius="md" whiteSpace="pre-wrap">
+                            {selectedExerciseDetails.inDepthExplanation || "No explanation available"}
                           </Text>
-                          <VStack align="stretch" spacing={2}>
-                            {prData.length >= 2 && (
-                              <>
-                                <Text fontSize="sm">
-                                  <strong>1RM Progress:</strong>{" "}
-                                  {prData[prData.length - 1].estimated1RM >
-                                  prData[0].estimated1RM
-                                    ? `+${
-                                        prData[prData.length - 1].estimated1RM -
-                                        prData[0].estimated1RM
-                                      } kg since you started`
-                                    : "Keep pushing for strength gains!"}
-                                </Text>
-                                <Text fontSize="sm">
-                                  <strong>Consistency:</strong> {prData.length}{" "}
-                                  workout sessions logged
-                                </Text>
-                                <Text fontSize="sm">
-                                  <strong>Peak Performance:</strong>{" "}
-                                  {Math.max(...prData.map((d) => d.maxWeight))}{" "}
-                                  kg for{" "}
-                                  {
-                                    prData.find(
-                                      (d) =>
-                                        d.maxWeight ===
-                                        Math.max(
-                                          ...prData.map((d) => d.maxWeight)
-                                        )
-                                    )?.bestReps
-                                  }{" "}
-                                  reps
-                                </Text>
-                              </>
-                            )}
-                          </VStack>
+                        )}
+                      </FormControl>
+
+                      {/* Save Button for Edit Mode */}
+                      {isEditMode && (
+                        <HStack justify="end" spacing={3}>
+                          <Button
+                            variant="outline"
+                            onClick={() => {
+                              setIsEditMode(false);
+                              setEditingExercise(null);
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            colorScheme="teal"
+                            onClick={saveEditedDetails}
+                            isLoading={saving}
+                            loadingText="Saving..."
+                          >
+                            Save Changes
+                          </Button>
+                        </HStack>
+                      )}
+                    </VStack>
+                  </TabPanel>
+
+                  {/* Progress Charts Tab */}
+                  <TabPanel>
+                    <VStack spacing={6} align="stretch">
+                      {loadingPrData ? (
+                        <Box textAlign="center" py={8}>
+                          <Spinner color="teal.500" size="lg" />
+                          <Text mt={4}>Loading progress data...</Text>
                         </Box>
-                      </VStack>
-                    )}
-                  </Box>
-                )}
-              </VStack>
+                      ) : prError ? (
+                        <Alert status="error">
+                          <AlertIcon />
+                          {prError}
+                        </Alert>
+                      ) : prData.length > 0 ? (
+                        <>
+                          {/* Strength Progression Chart */}
+                          <Box>
+                            <Heading size="md" mb={4}>Strength Progression Over Time</Heading>
+                            <Box h={{ base: "250px", md: "350px" }} w="full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <LineChart data={prData}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis 
+                                    dataKey="formattedDate" 
+                                    fontSize={12}
+                                    angle={-45}
+                                    textAnchor="end"
+                                    height={60}
+                                  />
+                                  <YAxis fontSize={12} />
+                                  <Tooltip 
+                                    labelFormatter={(value, payload) => {
+                                      if (payload && payload[0]) {
+                                        return new Date(payload[0].payload.date).toLocaleDateString();
+                                      }
+                                      return value;
+                                    }}
+                                  />
+                                  <Legend />
+                                  <Line 
+                                    type="monotone" 
+                                    dataKey="maxWeight" 
+                                    stroke="#319795" 
+                                    strokeWidth={3}
+                                    name="Max Weight (kg)"
+                                    dot={{ fill: "#319795", strokeWidth: 2, r: 4 }}
+                                  />
+                                  <Line 
+                                    type="monotone" 
+                                    dataKey="estimated1RM" 
+                                    stroke="#3182CE" 
+                                    strokeWidth={3}
+                                    name="Estimated 1RM (kg)"
+                                    dot={{ fill: "#3182CE", strokeWidth: 2, r: 4 }}
+                                  />
+                                </LineChart>
+                              </ResponsiveContainer>
+                            </Box>
+                          </Box>
+
+                          {/* Training Volume Chart */}
+                          <Box>
+                            <Heading size="md" mb={4}>Training Volume Progression</Heading>
+                            <Box h={{ base: "250px", md: "350px" }} w="full">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={prData}>
+                                  <CartesianGrid strokeDasharray="3 3" />
+                                  <XAxis 
+                                    dataKey="formattedDate" 
+                                    fontSize={12}
+                                    angle={-45}
+                                    textAnchor="end"
+                                    height={60}
+                                  />
+                                  <YAxis fontSize={12} />
+                                  <Tooltip 
+                                    labelFormatter={(value, payload) => {
+                                      if (payload && payload[0]) {
+                                        return new Date(payload[0].payload.date).toLocaleDateString();
+                                      }
+                                      return value;
+                                    }}
+                                  />
+                                  <Legend />
+                                  <Bar 
+                                    dataKey="totalVolume" 
+                                    fill="#805AD5" 
+                                    name="Total Volume (kg)"
+                                    radius={[4, 4, 0, 0]}
+                                  />
+                                </BarChart>
+                              </ResponsiveContainer>
+                            </Box>
+                          </Box>
+
+                          {/* Performance Summary */}
+                          <Box>
+                            <Heading size="md" mb={4}>Performance Summary</Heading>
+                            <SimpleGrid columns={{ base: 1, md: 3 }} spacing={4}>
+                              <Stat bg="green.50" p={4} borderRadius="lg" textAlign="center">
+                                <StatLabel color="green.600">Total Workouts</StatLabel>
+                                <StatNumber color="green.700" fontSize="2xl">
+                                  {prData.length}
+                                </StatNumber>
+                              </Stat>
+                              
+                              <Stat bg="blue.50" p={4} borderRadius="lg" textAlign="center">
+                                <StatLabel color="blue.600">Best Single Rep</StatLabel>
+                                <StatNumber color="blue.700" fontSize="2xl">
+                                  {Math.max(...prData.map(d => d.maxWeight))}kg
+                                </StatNumber>
+                              </Stat>
+                              
+                              <Stat bg="purple.50" p={4} borderRadius="lg" textAlign="center">
+                                <StatLabel color="purple.600">Best Volume Day</StatLabel>
+                                <StatNumber color="purple.700" fontSize="2xl">
+                                  {Math.max(...prData.map(d => d.totalVolume)).toFixed(0)}
+                                </StatNumber>
+                              </Stat>
+                            </SimpleGrid>
+                          </Box>
+                        </>
+                      ) : (
+                        <Box textAlign="center" py={8}>
+                          <Text color="gray.500" fontSize="lg">
+                            No workout history available for this exercise
+                          </Text>
+                          <Text color="gray.400" fontSize="sm" mt={2}>
+                            Complete some workouts to see your progress charts
+                          </Text>
+                        </Box>
+                      )}
+                    </VStack>
+                  </TabPanel>
+                </TabPanels>
+              </Tabs>
             )}
           </ModalBody>
           <ModalFooter>
-            {!isEditMode && !isChangeMode && (
-              <>
-                <Button
-                  colorScheme="teal"
-                  mr={3}
-                  onClick={() => {
-                    setIsEditMode(true);
-                    setEditingExercise({
-                      ...selectedExerciseDetails,
-                      exercise: selectedExerciseDetails.exercise,
-                      targetMuscleGroup:
-                        selectedExerciseDetails.targetMuscleGroup || "",
-                      videoDemonstration:
-                        selectedExerciseDetails.videoDemonstration || "",
-                      inDepthExplanation:
-                        selectedExerciseDetails.inDepthExplanation || "",
-                      favorite: selectedExerciseDetails.favorite || "",
-                      oneRmAlex: selectedExerciseDetails.oneRmAlex || "N/A",
-                    });
-                  }}
-                >
-                  Edit Details
-                </Button>
-              </>
-            )}
-            {isEditMode && (
-              <Button colorScheme="teal" mr={3} onClick={saveEditedDetails}>
-                Save Changes
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              onClick={() => setIsDetailsModalOpen(false)}
-            >
+            <Button onClick={() => setIsDetailsModalOpen(false)}>
               Close
             </Button>
           </ModalFooter>
         </ModalContent>
       </Modal>
-      {/* Change Exercise Search Modal */}
-      <Modal
-        isOpen={showChangeSearchModal}
-        onClose={() => {
-          setShowChangeSearchModal(false);
-          setIsChangeMode(false);
-        }}
-        size={{ base: "full", md: "lg" }}
-      >
-        <ModalOverlay />
-        <ModalContent>
-          <ModalHeader>Change Exercise</ModalHeader>
-          <ModalCloseButton />
-          <ModalBody>
-            <Input
-              placeholder="Search exercises by name, muscle group, equipment..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              size="md"
-              mb={2}
-              width="full"
-            />
-            {searchTerm && (
-              <Box
-                maxH="300px"
-                overflowY="auto"
-                bg="white"
-                borderRadius="md"
-                boxShadow="md"
-                p={2}
-                mt={-2}
-              >
-                <List spacing={1}>
-                  {filteredExercises.length === 0 && (
-                    <ListItem>
-                      <Text fontSize="sm" color="gray.500">
-                        No matching exercises found.
-                      </Text>
-                    </ListItem>
-                  )}
-                  {filteredExercises.map((ex) => (
-                    <ListItem
-                      key={ex.Exercise}
-                      p={2}
-                      borderRadius="sm"
-                      _hover={{ bg: "gray.100", cursor: "pointer" }}
-                      onClick={() => {
-                        replaceExercise(editExerciseIndex, ex.Exercise);
-                      }}
-                      borderBottom="1px solid"
-                      borderColor="gray.200"
-                    >
-                      <Text fontWeight="bold" fontSize="md">
-                        {ex.Exercise}
-                      </Text>
-                      <Text fontSize="sm" color="gray.600">
-                        Target: {ex.Target_Muscle_Group || "N/A"} | Equipment:{" "}
-                        {ex.Primary_Equipment || "N/A"} | Mechanics:{" "}
-                        {ex.Mechanics || "N/A"}
-                      </Text>
-                      <Flex gap={2} mt={1}>
-                        {ex.Video_Demonstration && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex.Video_Demonstration}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Video Demo
-                          </Text>
-                        )}
-                        {ex["In-Depth_Explanation"] && (
-                          <Text
-                            fontSize="xs"
-                            color="blue.500"
-                            as="a"
-                            href={ex["In-Depth_Explanation"]}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            _hover={{ textDecoration: "underline" }}
-                          >
-                            Explanation
-                          </Text>
-                        )}
-                      </Flex>
-                    </ListItem>
-                  ))}
-                </List>
-              </Box>
-            )}
-            <Select
-              placeholder="Or select from list"
-              size="sm"
-              mt={2}
-              width="full"
-              onChange={(e) => {
-                if (e.target.value) {
-                  replaceExercise(editExerciseIndex, e.target.value);
-                }
-              }}
-            >
-              {exerciseLibrary.map((ex) => (
-                <option key={ex.Exercise} value={ex.Exercise}>
-                  {ex.Exercise}
-                </option>
-              ))}
-            </Select>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setShowChangeSearchModal(false);
-                setIsChangeMode(false);
-              }}
-            >
-              Close
-            </Button>
-          </ModalFooter>
-        </ModalContent>
-      </Modal>
-    </Box>
+    </Container>
   );
 }
 

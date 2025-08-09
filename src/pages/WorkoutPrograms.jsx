@@ -1,4 +1,6 @@
 import { debounce } from "lodash"; // Ensure lodash is installed (npm install lodash)
+import { useDropzone } from 'react-dropzone';
+import Papa from 'papaparse';
 import { useState, useEffect, useRef, useCallback, memo } from "react";
 import {
   Box,
@@ -88,6 +90,7 @@ import {
   WrapItem,
 } from "@chakra-ui/react";
 import {
+  ArrowUpIcon, // UploadIcon not working
   ArrowBackIcon,
   EditIcon,
   DeleteIcon,
@@ -95,6 +98,7 @@ import {
   InfoIcon,
   CalendarIcon,
   StarIcon,
+  WarningIcon,
   CheckIcon,
   DownloadIcon,
 } from "@chakra-ui/icons";
@@ -108,6 +112,1210 @@ const descriptionRef = useRef(null);
 const timeWorkoutRef = useRef(null);
 const equipmentRef = useRef(null);
 */
+
+// CSV Program Upload Component
+const ProgramCSVUpload = ({ onProgramsUploaded, onClose }) => {
+  const [uploadStep, setUploadStep] = useState('upload'); // 'upload', 'validate', 'edit', 'save'
+  const [csvData, setCsvData] = useState([]);
+  const [validationResults, setValidationResults] = useState({});
+  const [processedPrograms, setProcessedPrograms] = useState([]);
+  const [editingProgram, setEditingProgram] = useState(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [errors, setErrors] = useState([]);
+  const [warnings, setWarnings] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  // Required CSV columns
+  const REQUIRED_COLUMNS = [
+    'Program_Name',
+    'week',
+    'day',
+    'exercise',
+    'target_sets',
+    'target_reps',
+  ];
+
+  const OPTIONAL_COLUMNS = [
+    'Program_Description',
+    'Level',
+    'Focus',
+    'target_weight_kg',
+    'target_rpe',
+    'target_rest',
+    'load_prescription_p1rm',
+    'superset',
+    'exercise_program_note',
+    'target_tempo',
+    'target_time_distance',
+  ];
+
+  const ALL_COLUMNS = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS];
+
+  // Dropzone configuration
+  const onDrop = useCallback((acceptedFiles) => {
+    const file = acceptedFiles[0];
+    if (!file) return;
+
+    setIsProcessing(true);
+    setErrors([]);
+    setWarnings([]);
+
+    Papa.parse(file, {
+      complete: (results) => {
+        console.log('📊 CSV Parse Results:', results);
+        handleCSVData(results.data, results.errors);
+        setIsProcessing(false);
+      },
+      header: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim(),
+      error: (error) => {
+        console.error('❌ CSV Parse Error:', error);
+        setErrors([`Failed to parse CSV: ${error.message}`]);
+        setIsProcessing(false);
+      },
+    });
+  }, []);
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'text/csv': ['.csv'],
+      'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+    },
+    multiple: false,
+  });
+
+  // Handle CSV data processing
+  const handleCSVData = (data, parseErrors) => {
+    if (parseErrors.length > 0) {
+      setErrors(parseErrors.map(err => `Row ${err.row}: ${err.message}`));
+      return;
+    }
+
+    setCsvData(data);
+    validateCSVData(data);
+  };
+
+  // Validate CSV data
+  const validateCSVData = (data) => {
+    const newErrors = [];
+    const newWarnings = [];
+    const validation = {};
+
+    console.log('🔍 Validating CSV data:', data);
+
+    // Check if data exists
+    if (!data || data.length === 0) {
+      newErrors.push('CSV file is empty or contains no valid data');
+      setErrors(newErrors);
+      return;
+    }
+
+    // Get headers from first row
+    const headers = Object.keys(data[0] || {});
+    console.log('📋 CSV Headers:', headers);
+
+    // Check required columns
+    const missingRequired = REQUIRED_COLUMNS.filter(col => !headers.includes(col));
+    if (missingRequired.length > 0) {
+      newErrors.push(`Missing required columns: ${missingRequired.join(', ')}`);
+    }
+
+    // Check for unknown columns
+    const unknownColumns = headers.filter(header => 
+      !ALL_COLUMNS.includes(header) && header.trim() !== ''
+    );
+    if (unknownColumns.length > 0) {
+      newWarnings.push(`Unknown columns found (will be ignored): ${unknownColumns.join(', ')}`);
+    }
+
+    // Validate each row
+    data.forEach((row, index) => {
+      const rowNumber = index + 1;
+      const rowErrors = [];
+      const rowWarnings = [];
+
+      // Check required fields
+      REQUIRED_COLUMNS.forEach(col => {
+        if (!row[col] || row[col].toString().trim() === '') {
+          rowErrors.push(`Missing required field: ${col}`);
+        }
+      });
+
+      // Validate data types and ranges
+      if (row.week) {
+        const week = parseInt(row.week);
+        if (isNaN(week) || week < 1 || week > 52) {
+          rowErrors.push('Week must be a number between 1 and 52');
+        }
+      }
+
+      if (row.day) {
+        const day = parseInt(row.day);
+        if (isNaN(day) || day < 1 || day > 7) {
+          rowErrors.push('Day must be a number between 1 and 7');
+        }
+      }
+
+      if (row.target_sets) {
+        const sets = parseInt(row.target_sets);
+        if (isNaN(sets) || sets < 1 || sets > 10) {
+          rowErrors.push('Target sets must be a number between 1 and 10');
+        }
+      }
+
+      if (row.target_reps) {
+        const reps = parseInt(row.target_reps);
+        if (isNaN(reps) || reps < 1 || reps > 100) {
+          rowErrors.push('Target reps must be a number between 1 and 100');
+        }
+      }
+
+      if (row.target_weight_kg && row.target_weight_kg !== '') {
+        const weight = parseFloat(row.target_weight_kg);
+        if (isNaN(weight) || weight < 0 || weight > 1000) {
+          rowErrors.push('Target weight must be a number between 0 and 1000');
+        }
+      }
+
+      if (row.target_rpe && row.target_rpe !== '') {
+        const rpe = parseFloat(row.target_rpe);
+        if (isNaN(rpe) || rpe < 1 || rpe > 10) {
+          rowErrors.push('Target RPE must be a number between 1 and 10');
+        }
+      }
+
+      if (row.target_rest && row.target_rest !== '') {
+        const rest = parseInt(row.target_rest);
+        if (isNaN(rest) || rest < 15 || rest > 600) {
+          rowErrors.push('Target rest must be a number between 15 and 600 seconds');
+        }
+      }
+
+      if (row.load_prescription_p1rm && row.load_prescription_p1rm !== '') {
+        const load = parseFloat(row.load_prescription_p1rm);
+        if (isNaN(load) || load < 30 || load > 100) {
+          rowErrors.push('Load prescription must be a number between 30 and 100');
+        }
+      }
+
+      // Check for duplicate exercises in same day/week
+      const duplicates = data.filter((otherRow, otherIndex) => 
+        otherIndex !== index &&
+        otherRow.Program_Name === row.Program_Name &&
+        otherRow.week === row.week &&
+        otherRow.day === row.day &&
+        otherRow.exercise === row.exercise
+      );
+
+      if (duplicates.length > 0) {
+        rowWarnings.push('Duplicate exercise found in same day/week');
+      }
+
+      validation[rowNumber] = {
+        errors: rowErrors,
+        warnings: rowWarnings,
+        isValid: rowErrors.length === 0,
+      };
+
+      newErrors.push(...rowErrors.map(err => `Row ${rowNumber}: ${err}`));
+      newWarnings.push(...rowWarnings.map(warn => `Row ${rowNumber}: ${warn}`));
+    });
+
+    setValidationResults(validation);
+    setErrors(newErrors);
+    setWarnings(newWarnings);
+
+    // If validation passes, process the programs
+    if (newErrors.length === 0) {
+      processPrograms(data);
+      setUploadStep('validate');
+    }
+  };
+
+  // Process CSV data into program structure
+  const processPrograms = (data) => {
+    const programsMap = {};
+
+    data.forEach((row, index) => {
+      const programName = row.Program_Name?.trim();
+      if (!programName) return;
+
+      if (!programsMap[programName]) {
+        programsMap[programName] = {
+          overview: {
+            Program_Name: programName,
+            Program_Description: row.Program_Description || '',
+            Level: row.Level || 'Intermediate',
+            Focus: row.Focus || 'General Fitness',
+            Program_Length_in_Weeks: 0,
+            Days_Per_Week: 0,
+            user_id: null, // Will be set when saving
+          },
+          exercises: [],
+          stats: {
+            totalExercises: 0,
+            totalWeeks: 0,
+            totalDays: 0,
+            errors: 0,
+            warnings: 0,
+          },
+        };
+      }
+
+      // Add exercise
+      const exercise = {
+        program_name: programName,
+        week: parseInt(row.week) || 1,
+        day: parseInt(row.day) || 1,
+        exercise: row.exercise?.trim() || '',
+        target_sets: parseInt(row.target_sets) || 3,
+        target_reps: parseInt(row.target_reps) || 10,
+        target_weight_kg: row.target_weight_kg ? parseFloat(row.target_weight_kg) : null,
+        target_rpe: row.target_rpe ? parseFloat(row.target_rpe) : 7,
+        target_rest: row.target_rest ? parseInt(row.target_rest) : 60,
+        load_prescription_p1rm: row.load_prescription_p1rm ? parseFloat(row.load_prescription_p1rm) : null,
+        superset: row.superset || '',
+        exercise_program_note: row.exercise_program_note || '',
+        target_tempo: row.target_tempo || '',
+        target_time_distance: row.target_time_distance || '',
+        focus: row.Focus || 'General Fitness',
+        program_macro_cycle: '',
+        user_id: null, // Will be set when saving
+        rowIndex: index + 1,
+        hasErrors: validationResults[index + 1]?.errors?.length > 0,
+        hasWarnings: validationResults[index + 1]?.warnings?.length > 0,
+      };
+
+      programsMap[programName].exercises.push(exercise);
+
+      // Update stats
+      const stats = programsMap[programName].stats;
+      stats.totalExercises++;
+      stats.totalWeeks = Math.max(stats.totalWeeks, exercise.week);
+      stats.totalDays = Math.max(stats.totalDays, exercise.day);
+      if (exercise.hasErrors) stats.errors++;
+      if (exercise.hasWarnings) stats.warnings++;
+    });
+
+    // Update program overviews with calculated stats
+    Object.values(programsMap).forEach(program => {
+      program.overview.Program_Length_in_Weeks = program.stats.totalWeeks;
+      program.overview.Days_Per_Week = program.stats.totalDays;
+    });
+
+    const programsArray = Object.values(programsMap);
+    setProcessedPrograms(programsArray);
+    console.log('📊 Processed Programs:', programsArray);
+  };
+
+  // Edit program function
+  const handleEditProgram = (program) => {
+    setEditingProgram({ ...program });
+  };
+
+  // Update exercise in editing program
+  const updateExerciseInEdit = (exerciseIndex, field, value) => {
+    if (!editingProgram) return;
+
+    const updatedProgram = { ...editingProgram };
+    updatedProgram.exercises[exerciseIndex] = {
+      ...updatedProgram.exercises[exerciseIndex],
+      [field]: value,
+    };
+
+    setEditingProgram(updatedProgram);
+  };
+
+  // Save edited program
+  const saveEditedProgram = () => {
+    if (!editingProgram) return;
+
+    const updatedPrograms = processedPrograms.map(program =>
+      program.overview.Program_Name === editingProgram.overview.Program_Name
+        ? editingProgram
+        : program
+    );
+
+    setProcessedPrograms(updatedPrograms);
+    setEditingProgram(null);
+  };
+
+  // Remove program
+  const removeProgram = (programName) => {
+    const updatedPrograms = processedPrograms.filter(
+      program => program.overview.Program_Name !== programName
+    );
+    setProcessedPrograms(updatedPrograms);
+  };
+
+  // Save programs to database
+  const saveToDatabase = async () => {
+    try {
+      setIsProcessing(true);
+      setUploadProgress(0);
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session) {
+        throw new Error('You must be logged in to save programs');
+      }
+
+      const userId = session.user.id;
+      let savedCount = 0;
+
+      for (const program of processedPrograms) {
+        try {
+          // Generate unique Program_ID
+          const programId = `program_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+          // Save program overview
+          const { error: overviewError } = await supabase
+            .from('program_overview')
+            .insert({
+              Program_ID: programId,
+              ...program.overview,
+              user_id: userId,
+              Created: new Date().toISOString(),
+            });
+
+          if (overviewError) {
+            console.error('Error saving program overview:', overviewError);
+            throw overviewError;
+          }
+
+          // Save exercises using RPC function (assuming you have it from earlier)
+          const exercisesWithIds = program.exercises.map(exercise => ({
+            ...exercise,
+            program_id: programId,
+            user_id: userId,
+          }));
+
+          const { error: exerciseError } = await supabase.rpc(
+            'insert_program_exercises',
+            { exercises_json: exercisesWithIds }
+          );
+
+          if (exerciseError) {
+            console.error('Error saving exercises:', exerciseError);
+            throw exerciseError;
+          }
+
+          savedCount++;
+          setUploadProgress((savedCount / processedPrograms.length) * 100);
+
+        } catch (err) {
+          console.error(`Error saving program ${program.overview.Program_Name}:`, err);
+          throw err;
+        }
+      }
+
+      // Success
+      setUploadStep('save');
+      if (onProgramsUploaded) {
+        onProgramsUploaded(processedPrograms);
+      }
+
+    } catch (err) {
+      setErrors([`Failed to save programs: ${err.message}`]);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // Download CSV template
+  const downloadTemplate = () => {
+    const template = [
+      {
+        Program_Name: 'Sample Program',
+        Program_Description: 'A sample workout program',
+        Level: 'Intermediate',
+        Focus: 'Hypertrophy',
+        week: 1,
+        day: 1,
+        exercise: 'Barbell Squat',
+        target_sets: 3,
+        target_reps: 10,
+        target_weight_kg: 100,
+        target_rpe: 8,
+        target_rest: 90,
+        load_prescription_p1rm: 75,
+        superset: '',
+        exercise_program_note: 'Focus on form',
+        target_tempo: '2-1-2',
+        target_time_distance: '',
+      },
+      {
+        Program_Name: 'Sample Program',
+        Program_Description: '',
+        Level: '',
+        Focus: '',
+        week: 1,
+        day: 1,
+        exercise: 'Bench Press',
+        target_sets: 3,
+        target_reps: 8,
+        target_weight_kg: 80,
+        target_rpe: 8,
+        target_rest: 120,
+        load_prescription_p1rm: 80,
+        superset: '',
+        exercise_program_note: '',
+        target_tempo: '',
+        target_time_distance: '',
+      },
+    ];
+
+    const csv = Papa.unparse(template);
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'program_template.csv');
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Render upload step
+  const renderUploadStep = () => (
+    <VStack spacing={6} align="stretch">
+      <Box textAlign="center">
+        <Text fontSize="lg" fontWeight="bold" mb={2}>
+          Upload Program CSV
+        </Text>
+        <Text color="gray.600" mb={4}>
+          Upload a CSV file containing your workout programs. The file will be validated before import.
+        </Text>
+        <Button
+          leftIcon={<DownloadIcon />}
+          size="sm"
+          variant="outline"
+          onClick={downloadTemplate}
+          mb={4}
+        >
+          Download CSV Template
+        </Button>
+      </Box>
+
+      <Box
+        {...getRootProps()}
+        border="2px dashed"
+        borderColor={isDragActive ? "teal.300" : "gray.300"}
+        borderRadius="md"
+        p={8}
+        textAlign="center"
+        cursor="pointer"
+        bg={isDragActive ? "teal.50" : "gray.50"}
+        _hover={{ bg: "teal.50", borderColor: "teal.300" }}
+      >
+        <input {...getInputProps()} />
+        <ArrowUpIcon boxSize={8} color="gray.400" mb={4} />
+        {isDragActive ? (
+          <Text>Drop the CSV file here...</Text>
+        ) : (
+          <VStack spacing={2}>
+            <Text fontWeight="semibold">
+              Drag & drop a CSV file here, or click to select
+            </Text>
+            <Text fontSize="sm" color="gray.500">
+              Supports .csv, .xls, .xlsx files
+            </Text>
+          </VStack>
+        )}
+      </Box>
+
+      {isProcessing && (
+        <Box>
+          <Text mb={2}>Processing file...</Text>
+          <Progress isIndeterminate colorScheme="teal" />
+        </Box>
+      )}
+
+      {errors.length > 0 && (
+        <Alert status="error">
+          <AlertIcon />
+          <Box>
+            <Text fontWeight="bold">Validation Errors:</Text>
+            {errors.slice(0, 5).map((error, index) => (
+              <Text key={index} fontSize="sm">• {error}</Text>
+            ))}
+            {errors.length > 5 && (
+              <Text fontSize="sm" color="gray.600">
+                ...and {errors.length - 5} more errors
+              </Text>
+            )}
+          </Box>
+        </Alert>
+      )}
+
+      {warnings.length > 0 && (
+        <Alert status="warning">
+          <AlertIcon />
+          <Box>
+            <Text fontWeight="bold">Warnings:</Text>
+            {warnings.slice(0, 3).map((warning, index) => (
+              <Text key={index} fontSize="sm">• {warning}</Text>
+            ))}
+            {warnings.length > 3 && (
+              <Text fontSize="sm" color="gray.600">
+                ...and {warnings.length - 3} more warnings
+              </Text>
+            )}
+          </Box>
+        </Alert>
+      )}
+    </VStack>
+  );
+
+  // Render validation step
+  const renderValidationStep = () => (
+    <VStack spacing={6} align="stretch">
+      <Box>
+        <Text fontSize="lg" fontWeight="bold" mb={2}>
+          Program Validation Results
+        </Text>
+        <Text color="gray.600">
+          Review the imported programs below. You can edit them before saving to the database.
+        </Text>
+      </Box>
+
+      {processedPrograms.map((program, index) => (
+        <Card key={index} variant="outline">
+          <CardHeader>
+            <HStack justify="space-between">
+              <VStack align="start" spacing={1}>
+                <Text fontWeight="bold" fontSize="lg">
+                  {program.overview.Program_Name}
+                </Text>
+                <HStack spacing={4}>
+                  <Badge colorScheme="blue">
+                    {program.stats.totalExercises} exercises
+                  </Badge>
+                  <Badge colorScheme="green">
+                    {program.stats.totalWeeks} weeks
+                  </Badge>
+                  <Badge colorScheme="purple">
+                    {program.stats.totalDays} days/week
+                  </Badge>
+                  {program.stats.errors > 0 && (
+                    <Badge colorScheme="red">
+                      {program.stats.errors} errors
+                    </Badge>
+                  )}
+                  {program.stats.warnings > 0 && (
+                    <Badge colorScheme="orange">
+                      {program.stats.warnings} warnings
+                    </Badge>
+                  )}
+                </HStack>
+              </VStack>
+              <HStack>
+                <IconButton
+                  icon={<EditIcon />}
+                  size="sm"
+                  onClick={() => handleEditProgram(program)}
+                  aria-label="Edit program"
+                />
+                <IconButton
+                  icon={<DeleteIcon />}
+                  size="sm"
+                  colorScheme="red"
+                  variant="ghost"
+                  onClick={() => removeProgram(program.overview.Program_Name)}
+                  aria-label="Remove program"
+                />
+              </HStack>
+            </HStack>
+          </CardHeader>
+          <CardBody>
+            <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+              <Box>
+                <Text fontSize="sm" fontWeight="semibold" mb={2}>Program Details:</Text>
+                <Text fontSize="sm">Level: {program.overview.Level}</Text>
+                <Text fontSize="sm">Focus: {program.overview.Focus}</Text>
+                {program.overview.Program_Description && (
+                  <Text fontSize="sm">Description: {program.overview.Program_Description}</Text>
+                )}
+              </Box>
+              <Box>
+                <Text fontSize="sm" fontWeight="semibold" mb={2}>Sample Exercises:</Text>
+                {program.exercises.slice(0, 3).map((exercise, idx) => (
+                  <Text key={idx} fontSize="sm">
+                    Week {exercise.week}, Day {exercise.day}: {exercise.exercise}
+                  </Text>
+                ))}
+                {program.exercises.length > 3 && (
+                  <Text fontSize="sm" color="gray.500">
+                    ...and {program.exercises.length - 3} more exercises
+                  </Text>
+                )}
+              </Box>
+            </SimpleGrid>
+          </CardBody>
+        </Card>
+      ))}
+
+      <HStack justify="space-between">
+        <Button
+          variant="outline"
+          onClick={() => setUploadStep('upload')}
+        >
+          Upload Different File
+        </Button>
+        <Button
+          colorScheme="teal"
+          onClick={saveToDatabase}
+          isDisabled={processedPrograms.length === 0}
+          isLoading={isProcessing}
+        >
+          Save {processedPrograms.length} Program{processedPrograms.length !== 1 ? 's' : ''} to Database
+        </Button>
+      </HStack>
+    </VStack>
+  );
+
+  // Render save step
+  const renderSaveStep = () => (
+    <VStack spacing={6} align="stretch">
+      <Box textAlign="center">
+        <CheckIcon boxSize={12} color="green.500" mb={4} />
+        <Text fontSize="lg" fontWeight="bold" mb={2}>
+          Programs Saved Successfully!
+        </Text>
+        <Text color="gray.600">
+          {processedPrograms.length} program{processedPrograms.length !== 1 ? 's have' : ' has'} been imported and saved to your database.
+        </Text>
+      </Box>
+
+      <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+        {processedPrograms.map((program, index) => (
+          <Box key={index} p={4} border="1px solid" borderColor="green.200" borderRadius="md" bg="green.50">
+            <Text fontWeight="bold">{program.overview.Program_Name}</Text>
+            <Text fontSize="sm" color="gray.600">
+              {program.stats.totalExercises} exercises • {program.stats.totalWeeks} weeks
+            </Text>
+          </Box>
+        ))}
+      </SimpleGrid>
+
+      <Button colorScheme="teal" onClick={onClose}>
+        Close
+      </Button>
+    </VStack>
+  );
+
+  return (
+    <Box>
+      {uploadStep === 'upload' && renderUploadStep()}
+      {uploadStep === 'validate' && renderValidationStep()}
+      {uploadStep === 'save' && renderSaveStep()}
+
+      {/* Program Editor Modal */}
+      <Modal isOpen={!!editingProgram} onClose={() => setEditingProgram(null)} size="6xl">
+        <ModalOverlay />
+        <ModalContent maxH="90vh" overflowY="auto">
+          <ModalHeader>
+            Edit Program: {editingProgram?.overview.Program_Name}
+          </ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            {editingProgram && (
+              <ProgramEditor
+                program={editingProgram}
+                onUpdateExercise={updateExerciseInEdit}
+                onUpdateOverview={(field, value) => {
+                  setEditingProgram(prev => ({
+                    ...prev,
+                    overview: { ...prev.overview, [field]: value }
+                  }));
+                }}
+              />
+            )}
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="outline" mr={3} onClick={() => setEditingProgram(null)}>
+              Cancel
+            </Button>
+            <Button colorScheme="teal" onClick={saveEditedProgram}>
+              Save Changes
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {isProcessing && uploadProgress > 0 && (
+        <Box mt={4}>
+          <Text mb={2}>Saving programs to database...</Text>
+          <Progress value={uploadProgress} colorScheme="teal" />
+        </Box>
+      )}
+    </Box>
+  );
+};
+
+// Program Editor Component
+const ProgramEditor = ({ program, onUpdateExercise, onUpdateOverview }) => {
+  const [selectedWeek, setSelectedWeek] = useState(1);
+  const [selectedDay, setSelectedDay] = useState(1);
+
+  const weeks = [...new Set(program.exercises.map(ex => ex.week))].sort((a, b) => a - b);
+  const days = [...new Set(program.exercises.filter(ex => ex.week === selectedWeek).map(ex => ex.day))].sort((a, b) => a - b);
+  const dayExercises = program.exercises.filter(ex => ex.week === selectedWeek && ex.day === selectedDay);
+
+  return (
+    <VStack spacing={6} align="stretch">
+      {/* Program Overview */}
+      <Card>
+        <CardHeader>
+          <Text fontWeight="bold">Program Overview</Text>
+        </CardHeader>
+        <CardBody>
+          <SimpleGrid columns={{ base: 1, md: 2 }} spacing={4}>
+            <FormControl>
+              <FormLabel>Program Name</FormLabel>
+              <Input
+                value={program.overview.Program_Name}
+                onChange={(e) => onUpdateOverview('Program_Name', e.target.value)}
+              />
+            </FormControl>
+            <FormControl>
+              <FormLabel>Level</FormLabel>
+              <Select
+                value={program.overview.Level}
+                onChange={(e) => onUpdateOverview('Level', e.target.value)}
+              >
+                <option value="Beginner">Beginner</option>
+                <option value="Intermediate">Intermediate</option>
+                <option value="Advanced">Advanced</option>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <FormLabel>Focus</FormLabel>
+              <Select
+                value={program.overview.Focus}
+                onChange={(e) => onUpdateOverview('Focus', e.target.value)}
+              >
+                <option value="Strength">Strength</option>
+                <option value="Hypertrophy">Hypertrophy</option>
+                <option value="Power">Power</option>
+                <option value="Endurance">Endurance</option>
+                <option value="General Fitness">General Fitness</option>
+              </Select>
+            </FormControl>
+            <FormControl>
+              <FormLabel>Description</FormLabel>
+              <Textarea
+                value={program.overview.Program_Description}
+                onChange={(e) => onUpdateOverview('Program_Description', e.target.value)}
+                placeholder="Program description..."
+              />
+            </FormControl>
+          </SimpleGrid>
+        </CardBody>
+      </Card>
+
+      {/* Exercise Editor */}
+      <Card>
+        <CardHeader>
+          <HStack justify="space-between">
+            <Text fontWeight="bold">Exercises</Text>
+            <HStack>
+              <Select
+                value={selectedWeek}
+                onChange={(e) => setSelectedWeek(parseInt(e.target.value))}
+                size="sm"
+                width="auto"
+              >
+                {weeks.map(week => (
+                  <option key={week} value={week}>Week {week}</option>
+                ))}
+              </Select>
+              <Select
+                value={selectedDay}
+                onChange={(e) => setSelectedDay(parseInt(e.target.value))}
+                size="sm"
+                width="auto"
+              >
+                {days.map(day => (
+                  <option key={day} value={day}>Day {day}</option>
+                ))}
+              </Select>
+            </HStack>
+          </HStack>
+        </CardHeader>
+        <CardBody>
+          <VStack spacing={4} align="stretch">
+            {dayExercises.map((exercise, index) => {
+              const globalIndex = program.exercises.findIndex(ex => 
+                ex.week === exercise.week && 
+                ex.day === exercise.day && 
+                ex.exercise === exercise.exercise
+              );
+
+              return (
+                <Box key={index} p={4} border="1px solid" borderColor="gray.200" borderRadius="md">
+                  <SimpleGrid columns={{ base: 1, md: 3, lg: 5 }} spacing={3}>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Exercise</FormLabel>
+                      <Input
+                        value={exercise.exercise}
+                        onChange={(e) => onUpdateExercise(globalIndex, 'exercise', e.target.value)}
+                        size="sm"
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Sets</FormLabel>
+                      <NumberInput
+                        value={exercise.target_sets}
+                        onChange={(_, value) => onUpdateExercise(globalIndex, 'target_sets', value)}
+                        min={1}
+                        max={10}
+                        size="sm"
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Reps</FormLabel>
+                      <NumberInput
+                        value={exercise.target_reps}
+                        onChange={(_, value) => onUpdateExercise(globalIndex, 'target_reps', value)}
+                        min={1}
+                        max={100}
+                        size="sm"
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Weight (kg)</FormLabel>
+                      <NumberInput
+                        value={exercise.target_weight_kg || ''}
+                        onChange={(_, value) => onUpdateExercise(globalIndex, 'target_weight_kg', value)}
+                        min={0}
+                        precision={2}
+                        step={0.25}
+                        size="sm"
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">RPE</FormLabel>
+                      <NumberInput
+                        value={exercise.target_rpe}
+                        onChange={(_, value) => onUpdateExercise(globalIndex, 'target_rpe', value)}
+                        min={1}
+                        max={10}
+                        step={0.5}
+                        size="sm"
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                  </SimpleGrid>
+                  
+                  <SimpleGrid columns={{ base: 1, md: 2, lg: 4 }} spacing={3} mt={3}>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Rest (sec)</FormLabel>
+                      <NumberInput
+                        value={exercise.target_rest}
+                        onChange={(_, value) => onUpdateExercise(globalIndex, 'target_rest', value)}
+                        min={15}
+                        max={600}
+                        step={15}
+                        size="sm"
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">% 1RM</FormLabel>
+                      <NumberInput
+                        value={exercise.load_prescription_p1rm || ''}
+                        onChange={(_, value) => onUpdateExercise(globalIndex, 'load_prescription_p1rm', value)}
+                        min={30}
+                        max={100}
+                        step={2.5}
+                        size="sm"
+                      >
+                        <NumberInputField />
+                        <NumberInputStepper>
+                          <NumberIncrementStepper />
+                          <NumberDecrementStepper />
+                        </NumberInputStepper>
+                      </NumberInput>
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Superset</FormLabel>
+                      <Input
+                        value={exercise.superset}
+                        onChange={(e) => onUpdateExercise(globalIndex, 'superset', e.target.value)}
+                        size="sm"
+                        placeholder="e.g., A1, B1"
+                      />
+                    </FormControl>
+                    <FormControl>
+                      <FormLabel fontSize="sm">Tempo</FormLabel>
+                      <Input
+                        value={exercise.target_tempo}
+                        onChange={(e) => onUpdateExercise(globalIndex, 'target_tempo', e.target.value)}
+                        size="sm"
+                        placeholder="e.g., 2-1-2"
+                      />
+                    </FormControl>
+                  </SimpleGrid>
+
+                  {exercise.exercise_program_note && (
+                    <FormControl mt={3}>
+                      <FormLabel fontSize="sm">Notes</FormLabel>
+                      <Textarea
+                        value={exercise.exercise_program_note}
+                        onChange={(e) => onUpdateExercise(globalIndex, 'exercise_program_note', e.target.value)}
+                        size="sm"
+                        rows={2}
+                      />
+                    </FormControl>
+                  )}
+
+                  {(exercise.hasErrors || exercise.hasWarnings) && (
+                    <HStack mt={2}>
+                      {exercise.hasErrors && (
+                        <Badge colorScheme="red" size="sm">
+                          <WarningIcon mr={1} />
+                          Errors
+                        </Badge>
+                      )}
+                      {exercise.hasWarnings && (
+                        <Badge colorScheme="orange" size="sm">
+                          <InfoIcon mr={1} />
+                          Warnings
+                        </Badge>
+                      )}
+                   
+                    </HStack>
+                  )}
+                </Box>
+              );
+            })}
+
+            {dayExercises.length === 0 && (
+              <Box textAlign="center" py={8} bg="gray.50" borderRadius="md">
+                <Text color="gray.500">
+                  No exercises found for Week {selectedWeek}, Day {selectedDay}
+                </Text>
+              </Box>
+            )}
+          </VStack>
+        </CardBody>
+      </Card>
+    </VStack>
+  );
+};
+
+// Main Upload Modal Component
+const ProgramUploadModal = ({ isOpen, onClose, onProgramsUploaded }) => {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="6xl">
+      <ModalOverlay />
+      <ModalContent maxH="90vh" overflowY="auto">
+        <ModalHeader>
+          <HStack>
+            <ArrowUpIcon />
+            <Text>Import Programs from CSV</Text>
+          </HStack>
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody pb={6}>
+          <ProgramCSVUpload 
+            onProgramsUploaded={onProgramsUploaded} 
+            onClose={onClose}
+          />
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
+};
+
+// Google Sheets Integration Component (Optional)
+const GoogleSheetsImport = ({ onDataImported }) => {
+  const [sheetsUrl, setSheetsUrl] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleGoogleSheetsImport = async () => {
+    if (!sheetsUrl) {
+      setError('Please enter a Google Sheets URL');
+      return;
+    }
+
+    setIsLoading(true);
+    setError('');
+
+    try {
+      // Extract sheet ID from URL
+      const sheetIdMatch = sheetsUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+      if (!sheetIdMatch) {
+        throw new Error('Invalid Google Sheets URL');
+      }
+
+      const sheetId = sheetIdMatch[1];
+      
+      // Convert to CSV export URL
+      const csvUrl = `https://docs.google.com/spreadsheets/d/${sheetId}/export?format=csv`;
+
+      // Fetch the CSV data
+      const response = await fetch(csvUrl);
+      if (!response.ok) {
+        throw new Error('Failed to fetch Google Sheets data. Make sure the sheet is publicly accessible.');
+      }
+
+      const csvText = await response.text();
+
+      // Parse CSV
+      Papa.parse(csvText, {
+        complete: (results) => {
+          if (results.errors.length > 0) {
+            setError('Error parsing CSV data from Google Sheets');
+            return;
+          }
+          onDataImported(results.data);
+        },
+        header: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim(),
+      });
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <VStack spacing={4} align="stretch">
+      <Box>
+        <Text fontWeight="bold" mb={2}>Import from Google Sheets</Text>
+        <Text fontSize="sm" color="gray.600" mb={4}>
+          Enter a Google Sheets URL to import data directly. The sheet must be publicly accessible.
+        </Text>
+      </Box>
+
+      <FormControl>
+        <FormLabel>Google Sheets URL</FormLabel>
+        <Input
+          value={sheetsUrl}
+          onChange={(e) => setSheetsUrl(e.target.value)}
+          placeholder="https://docs.google.com/spreadsheets/d/your-sheet-id/edit"
+        />
+      </FormControl>
+
+      {error && (
+        <Alert status="error">
+          <AlertIcon />
+          <Text>{error}</Text>
+        </Alert>
+      )}
+
+      <Button
+        colorScheme="green"
+        onClick={handleGoogleSheetsImport}
+        isLoading={isLoading}
+        isDisabled={!sheetsUrl}
+        leftIcon={<DownloadIcon />}
+      >
+        Import from Google Sheets
+      </Button>
+
+      <Box p={4} bg="blue.50" borderRadius="md">
+        <Text fontSize="sm" fontWeight="bold" mb={2}>📋 Instructions:</Text>
+        <VStack align="start" spacing={1} fontSize="sm">
+          <Text>1. Make sure your Google Sheet is publicly accessible (Anyone with the link can view)</Text>
+          <Text>2. Use the same column headers as the CSV template</Text>
+          <Text>3. Copy the full URL from your browser's address bar</Text>
+          <Text>4. Click "Import from Google Sheets" to fetch the data</Text>
+        </VStack>
+      </Box>
+    </VStack>
+  );
+};
+
+// Enhanced Upload Modal with Google Sheets option
+const EnhancedProgramUploadModal = ({ isOpen, onClose, onProgramsUploaded }) => {
+  const [importMethod, setImportMethod] = useState('csv'); // 'csv' or 'sheets'
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} size="6xl">
+      <ModalOverlay />
+      <ModalContent maxH="90vh" overflowY="auto">
+        <ModalHeader>
+          <HStack>
+            <ArrowUpIcon />
+            <Text>Import Programs</Text>
+          </HStack>
+        </ModalHeader>
+        <ModalCloseButton />
+        <ModalBody pb={6}>
+          <Tabs value={importMethod} onChange={setImportMethod}>
+            <TabList>
+              <Tab onClick={() => setImportMethod('csv')}>
+                📁 CSV Upload
+              </Tab>
+              <Tab onClick={() => setImportMethod('sheets')}>
+                📊 Google Sheets
+              </Tab>
+            </TabList>
+
+            <TabPanels>
+              <TabPanel px={0}>
+                <ProgramCSVUpload 
+                  onProgramsUploaded={onProgramsUploaded} 
+                  onClose={onClose}
+                />
+              </TabPanel>
+              <TabPanel px={0}>
+                <GoogleSheetsImport 
+                  onDataImported={(data) => {
+                    // Handle Google Sheets data the same way as CSV
+                    // You can integrate this with the existing CSV processing logic
+                    console.log('Google Sheets data:', data);
+                  }}
+                />
+              </TabPanel>
+            </TabPanels>
+          </Tabs>
+        </ModalBody>
+      </ModalContent>
+    </Modal>
+  );
+};
+
 
 // Add this function to debug the weekOneTemplate --- DELETE LATER
 const debugWeekOneTemplate = () => {
@@ -321,6 +1529,13 @@ const handleBlur  = () => setActiveInput(null);
   console.log(`Focused: ${field}`); // Debug: Log focused field
 }, []);
 */
+
+// Add this with your other useDisclosure hooks
+const { 
+  isOpen: isUploadModalOpen, 
+  onOpen: onUploadModalOpen, 
+  onClose: onUploadModalClose 
+} = useDisclosure();
 
 // Add this component inside your WorkoutPrograms function
 const ProgramDescriptionDisplay = ({ description, programName }) => {
@@ -1057,6 +2272,17 @@ const getExercisesForDay = (day) => {
   return Object.values(weekOneTemplate).filter(exercise => exercise.day === day) || [];
 };
 
+// Add this function with your other handler functions
+const handleProgramsUploaded = (uploadedPrograms) => {
+  console.log('Programs uploaded successfully:', uploadedPrograms);
+  // Refresh the programs list
+  fetchPrograms();
+  // Show success message
+  setSuccessMessage(`Successfully imported ${uploadedPrograms.length} program(s)!`);
+  setTimeout(() => setSuccessMessage(null), 5000);
+};
+
+
 // Add these helper functions for Steps 5 & 6
 // Add this improved handleGenerateProgram function
 // Replace your existing handleGenerateProgram function with this corrected version
@@ -1717,6 +2943,62 @@ const getTotalExercisesInTemplate = () => {
 
 // 👆 END OF HELPER FUNCTIONS 👆    
 
+// Add this header function here
+const renderMainHeader = () => (
+  <Flex align="center" justify="space-between" mb={6}>
+    <Flex align="center">
+      <IconButton
+        icon={<ArrowBackIcon />}
+        colorScheme="teal"
+        size="md"
+        onClick={goBackToDashboard}
+        aria-label="Back to Dashboard"
+        mr={3}
+      />
+      <VStack align="start" spacing={1}>
+        <Heading size="lg" color="teal.600">
+          Workout Programs
+        </Heading>
+        <Text color="gray.600">
+          
+        </Text>
+      </VStack>
+    </Flex>
+
+    <HStack spacing={3}>
+      <Button
+        leftIcon={<ArrowUpIcon />}
+        colorScheme="blue"
+        variant="outline"
+        onClick={onUploadModalOpen}
+        size="md"
+      >
+        Import Programs
+      </Button>
+      
+      <Button
+        leftIcon={<AddIcon />}
+        colorScheme="teal"
+        onClick={() => {
+          setIsCreatingProgram(true);
+          onProgramModalOpen();
+        }}
+        size="md"
+      >
+        Create Program
+      </Button>
+      
+      <Button
+        leftIcon={<CalendarIcon />}
+        variant="outline"
+        onClick={onEnrollmentModalOpen}
+        size="md"
+      >
+        My Programs
+      </Button>
+    </HStack>
+  </Flex>
+);
 
 // Step 2: Training Structure
 const [trainingStructure, setTrainingStructure] = useState({
@@ -5946,40 +7228,11 @@ const saveCompleteProgram = async () => {
   // Main render function
   return (
     <Box p={4} maxW="100%" bg="gray.50" minH="100vh">
-      {/* Header */}
-      <Flex align="center" justify="space-between" mb={6}>
-        <Flex align="center">
-          <IconButton
-            icon={<ArrowBackIcon />}
-            colorScheme="teal"
-            size="md"
-            onClick={goBackToDashboard}
-            aria-label="Back to Dashboard"
-            mr={3}
-          />
-          <Heading size="lg">Workout Programs</Heading>
-        </Flex>
-
-        <HStack spacing={3}>
-          <Button
-            leftIcon={<AddIcon />}
-            colorScheme="teal"
-            onClick={startCreatingProgram}
-            size="md"
-          >
-            Create Program
-          </Button>
-          <Button
-            leftIcon={<CalendarIcon />}
-            variant="outline"
-            onClick={onEnrollmentModalOpen}
-            size="md"
-          >
-            My Programs
-          </Button>
-        </HStack>
-      </Flex>
-
+      {renderMainHeader()}  {/* ADD THIS LINE */}
+      
+      {/* Success Message */}
+      {      /* Header */}
+      
       {/* Error and Success Messages */}
       {error && (
         <Alert status="error" mb={4}>
@@ -6722,8 +7975,89 @@ const saveCompleteProgram = async () => {
           </ModalFooter>
         </ModalContent>
       </Modal>
+
+      <EnhancedProgramUploadModal
+  isOpen={isUploadModalOpen}
+  onClose={onUploadModalClose}
+  onProgramsUploaded={handleProgramsUploaded}
+/>
+
     </Box>
   );
 }
+
+// Add this at the very end of your file, outside the WorkoutPrograms function
+const validateProgramData = (programs) => {
+  const errors = [];
+  const warnings = [];
+
+  programs.forEach((program, programIndex) => {
+    // Validate program overview
+    if (!program.overview.Program_Name?.trim()) {
+      errors.push(`Program ${programIndex + 1}: Missing program name`);
+    }
+
+    if (!program.overview.Level || !['Beginner', 'Intermediate', 'Advanced'].includes(program.overview.Level)) {
+      warnings.push(`Program ${programIndex + 1}: Invalid or missing level`);
+    }
+
+    // Validate exercises
+    program.exercises.forEach((exercise, exerciseIndex) => {
+      const exerciseRef = `Program "${program.overview.Program_Name}", Exercise ${exerciseIndex + 1}`;
+
+      // Required fields
+      if (!exercise.exercise?.trim()) {
+        errors.push(`${exerciseRef}: Missing exercise name`);
+      }
+
+      if (!exercise.week || exercise.week < 1 || exercise.week > 52) {
+        errors.push(`${exerciseRef}: Invalid week (${exercise.week})`);
+      }
+
+      if (!exercise.day || exercise.day < 1 || exercise.day > 7) {
+        errors.push(`${exerciseRef}: Invalid day (${exercise.day})`);
+      }
+
+      if (!exercise.target_sets || exercise.target_sets < 1 || exercise.target_sets > 10) {
+        errors.push(`${exerciseRef}: Invalid target sets (${exercise.target_sets})`);
+      }
+
+      if (!exercise.target_reps || exercise.target_reps < 1 || exercise.target_reps > 100) {
+        errors.push(`${exerciseRef}: Invalid target reps (${exercise.target_reps})`);
+      }
+
+      // Optional field validations
+      if (exercise.target_weight_kg && (exercise.target_weight_kg < 0 || exercise.target_weight_kg > 1000)) {
+        warnings.push(`${exerciseRef}: Unusual weight value (${exercise.target_weight_kg}kg)`);
+      }
+
+      if (exercise.target_rpe && (exercise.target_rpe < 1 || exercise.target_rpe > 10)) {
+        errors.push(`${exerciseRef}: Invalid RPE (${exercise.target_rpe})`);
+      }
+
+      if (exercise.load_prescription_p1rm && (exercise.load_prescription_p1rm < 30 || exercise.load_prescription_p1rm > 100)) {
+        warnings.push(`${exerciseRef}: Unusual load prescription (${exercise.load_prescription_p1rm}%)`);
+      }
+    });
+
+    // Check for program consistency
+    const weeks = [...new Set(program.exercises.map(ex => ex.week))];
+    const maxWeek = Math.max(...weeks);
+    if (maxWeek !== program.overview.Program_Length_in_Weeks) {
+      warnings.push(`Program "${program.overview.Program_Name}": Program length (${program.overview.Program_Length_in_Weeks}) doesn't match max week in exercises (${maxWeek})`);
+    }
+  });
+
+  return { errors, warnings };
+};
+
+// Update your export at the bottom of the file
+export { 
+  ProgramCSVUpload, 
+  ProgramUploadModal, 
+  EnhancedProgramUploadModal, 
+  GoogleSheetsImport,
+  validateProgramData 
+};
 
 export default WorkoutPrograms;
